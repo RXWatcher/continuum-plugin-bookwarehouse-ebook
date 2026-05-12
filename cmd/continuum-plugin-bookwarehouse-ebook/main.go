@@ -18,9 +18,13 @@ import (
 	sdkruntime "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginsdk/runtime"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/consumer"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/event"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/httproutes"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/migrate"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/reconciler"
 	pluginrt "github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/runtime"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/scheduler"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/server"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/store"
 )
@@ -40,10 +44,13 @@ func main() {
 	httpSrv := httproutes.NewServer()
 
 	var (
-		poolPtr  atomic.Pointer[pgxpool.Pool]
-		storePtr atomic.Pointer[store.Store]
-		cfgPtr   atomic.Pointer[pluginrt.Config]
+		poolPtr        atomic.Pointer[pgxpool.Pool]
+		consumerDepsP  atomic.Pointer[consumer.Deps]
+		reconcilerPtr  atomic.Pointer[reconciler.Reconciler]
 	)
+
+	consumerHandler := consumer.New(func() *consumer.Deps { return consumerDepsP.Load() })
+	schedulerSrv := scheduler.New(func() *reconciler.Reconciler { return reconcilerPtr.Load() })
 
 	rt := pluginrt.New(manifest, func(cfg pluginrt.Config) error {
 		ctx := context.Background()
@@ -65,8 +72,17 @@ func main() {
 		})
 		httpSrv.SetHandler(srv.Handler())
 
-		storePtr.Store(st)
-		cfgPtr.Store(&cfg)
+		ev := event.New(sdkruntime.Host(), logger.Named("event"))
+		consumerDepsP.Store(&consumer.Deps{
+			Store:    st,
+			Pub:      ev,
+			BW:       bwClient,
+			PluginID: "continuum.bookwarehouse-ebook",
+		})
+		reconcilerPtr.Store(reconciler.New(reconciler.Deps{
+			Store: st, Pub: ev, BW: bwClient,
+		}))
+
 		if old := poolPtr.Swap(p); old != nil {
 			old.Close()
 		}
@@ -77,8 +93,10 @@ func main() {
 	sdkruntime.Serve(sdkruntime.ServeConfig{
 		Logger: logger,
 		Servers: sdkruntime.CapabilityServers{
-			Runtime:    rt,
-			HttpRoutes: httpSrv,
+			Runtime:       rt,
+			HttpRoutes:    httpSrv,
+			EventConsumer: consumerHandler,
+			ScheduledTask: schedulerSrv,
 		},
 	})
 }

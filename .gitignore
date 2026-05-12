@@ -1,0 +1,4 @@
+/continuum-plugin-bookwarehouse-ebook
+*.test
+*.out
+.envrc

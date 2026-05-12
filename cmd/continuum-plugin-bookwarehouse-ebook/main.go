@@ -17,6 +17,7 @@ import (
 	publicmanifest "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginsdk/manifest"
 	sdkruntime "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginsdk/runtime"
 
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/httproutes"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/migrate"
 	pluginrt "github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/runtime"
@@ -56,8 +57,12 @@ func main() {
 			return fmt.Errorf("migrate: %w", err)
 		}
 		st := store.New(p)
+		bwClient := bookwarehouse.NewClient(cfg.BaseURL, cfg.APIKey)
 
-		srv := server.New(server.Deps{EnableAutoMonitoring: cfg.EnableAutoMonitoring})
+		srv := server.New(server.Deps{
+			EnableAutoMonitoring: cfg.EnableAutoMonitoring,
+			BookwarehouseClient:  bwClient,
+		})
 		httpSrv.SetHandler(srv.Handler())
 
 		storePtr.Store(st)

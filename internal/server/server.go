@@ -7,17 +7,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/catalog"
 )
 
-// Deps holds dependencies for the HTTP layer. Fields are filled in across
-// Phase 1 (capabilities), Phase 2/3 (BookwarehouseClient), Phase 5 (request
-// handler), etc. The server treats nil dependencies as "feature not mounted".
 type Deps struct {
 	EnableAutoMonitoring bool
-
-	// CatalogRoutes is a hook installed in Phase 3 to mount /catalog/*,
-	// /browse/*, /cover, /file, /external_search, /requests routes.
-	CatalogRoutes func(chi.Router)
+	BookwarehouseClient  *bookwarehouse.Client
 }
 
 type Server struct {
@@ -32,8 +29,9 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", s.handleHealth)
 		r.Get("/capabilities", s.handleCapabilities)
-		if s.deps.CatalogRoutes != nil {
-			s.deps.CatalogRoutes(r)
+		if s.deps.BookwarehouseClient != nil {
+			ch := catalog.NewHandler(s.deps.BookwarehouseClient)
+			ch.Mount(r)
 		}
 	})
 	return r

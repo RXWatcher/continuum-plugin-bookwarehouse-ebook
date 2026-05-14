@@ -13,6 +13,12 @@ import (
 
 const defaultTimeout = 30 * time.Second
 
+// maxResponseBytes caps the body read from the upstream BookWarehouse
+// service. Normal JSON list/detail responses are well under this; the cap
+// defends against memory exhaustion if the upstream returns a runaway
+// body (broken, compromised, hostile).
+const maxResponseBytes = 10 << 20 // 10 MiB
+
 type Client struct {
 	baseURL string
 	apiKey  string
@@ -41,11 +47,34 @@ func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
 		return nil, fmt.Errorf("do: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("upstream %d: %s", resp.StatusCode, string(body))
 	}
 	return body, nil
+}
+
+// GetStream issues a GET and returns the response so the caller can copy the
+// body without buffering it in memory. Used for cover images and ebook files
+// where the response can be megabytes. Caller MUST close resp.Body.
+func (c *Client) GetStream(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("X-API-Key", c.apiKey)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("upstream %d", resp.StatusCode)
+	}
+	return resp, nil
 }
 
 func (c *Client) PostJSON(ctx context.Context, path string, body []byte) ([]byte, error) {
@@ -61,7 +90,10 @@ func (c *Client) PostJSON(ctx context.Context, path string, body []byte) ([]byte
 		return nil, fmt.Errorf("do: %w", err)
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("upstream %d: %s", resp.StatusCode, string(respBody))
 	}

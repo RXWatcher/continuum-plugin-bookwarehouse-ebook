@@ -1,21 +1,44 @@
 # continuum-plugin-bookwarehouse-ebook
 
-Continuum plugin: thin adapter exposing a Calibre-backed BookWarehouse
-instance to the `continuum.ebooks` portal via the `ebook_backend.v1`
-capability.
+Thin adapter exposing a Calibre-backed BookWarehouse instance to the [`continuum.ebooks`](../continuum-plugin-ebooks/) portal via the `ebook_backend.v1` capability. Maintains long-lived monitoring on requests (Sonarr-style: keep searching until found) when `enable_auto_monitoring` is on.
 
-See `/opt/worktrees/continuum-rh/docs/superpowers/specs/2026-05-11-ebooks-portal-and-backends-design.md`.
+## Capabilities
 
-## Build & test
+| Capability | Notes |
+|---|---|
+| `ebook_backend.v1` (`default`) | Owned-library ebook source. |
+| `http_routes.v1` (`backend`) | `/api/v1/{health,capabilities,catalog,catalog/{id},catalog/search,cover/{id}/{size},file/{id},requests,requests/{external_id},external_search}`. |
+| `event_consumer.v1` (`request_handler`) | Subscribes to `plugin.continuum.ebooks.request_submitted`; forwards new requests to BookWarehouse monitoring. |
+| `scheduled_task.v1` (`reconciler`) | Cron `*/1 * * * *`. Polls upstream for status changes on non-terminal requests. |
 
-```bash
-go build ./cmd/continuum-plugin-bookwarehouse-ebook
-go test ./...   # requires Postgres for store tests
-```
+Emits to the bus: `request_acknowledged`, `request_status_changed`, `request_fulfilled`, `request_failed`.
 
-## Operator runbook
+## Configuration
 
-### Postgres pre-flight
+| Key | Required | Description |
+|---|---|---|
+| `database_url` | yes | DSN for the `bookwarehouse_ebook` schema. |
+| `base_url` | yes | BookWarehouse base URL, no trailing slash. |
+| `api_key` | yes | `X-API-Key` for upstream calls. |
+| `default_cover_size` | no | One of `small \| medium \| large \| original` (default `large`). |
+| `request_quality_profile` | no | BookWarehouse-side quality tier for new requests. |
+| `enable_auto_monitoring` | no | Flips the `auto_monitoring` feature flag in capabilities; off by default. |
+
+## Compared to `continuum.ebookdb`
+
+| | `bookwarehouse-ebook` | `ebookdb` |
+|---|---|---|
+| Backing service | Calibre / BookWarehouse | Anna's-Archive-style EbookDB |
+| Long-lived monitoring | yes (when enabled) | no — one-shot fetch |
+| Formats | per-library | typically 9 (epub, pdf, mobi, azw3, fb2, lit, lrf, pdb, prc) |
+| Features | `auto_monitoring` available | `external_search` only |
+
+## Dependencies
+
+- Postgres role + `bookwarehouse_ebook` schema.
+- An external BookWarehouse/Calibre instance.
+
+## Install
 
 ```sql
 CREATE ROLE plugin_bookwarehouse_ebook WITH LOGIN PASSWORD '<chosen>';
@@ -23,18 +46,15 @@ CREATE SCHEMA bookwarehouse_ebook AUTHORIZATION plugin_bookwarehouse_ebook;
 GRANT CONNECT ON DATABASE continuum TO plugin_bookwarehouse_ebook;
 ```
 
-### Configuration (admin UI)
+Then select this plugin as the ebooks-portal backend from `/admin/settings`.
 
-| Key | Required | Notes |
-|-----|----------|-------|
-| `database_url` | yes | `postgres://plugin_bookwarehouse_ebook:<pwd>@host/continuum?search_path=bookwarehouse_ebook` |
-| `base_url` | yes | Calibre/BookWarehouse instance base URL. |
-| `api_key` | yes | X-API-Key for the BookWarehouse instance. |
-| `enable_auto_monitoring` | optional | Off by default; flips `features:[auto_monitoring]` in capabilities. |
+## Build & test
 
-### Capabilities exposed
+```bash
+go build ./cmd/continuum-plugin-bookwarehouse-ebook
+go test ./...    # requires Postgres for store tests
+```
 
-* `http_routes.v1` — serves `/api/v1/{health,capabilities,catalog,catalog/{id},catalog/search,cover/{id}/{size},file/{id},requests,requests/{external_id},external_search}`
-* `event_publisher.v1` — emits `request_acknowledged`, `request_status_changed`, `request_fulfilled`, `request_failed`
-* `event_consumer.v1` — subscribes to `plugin.continuum.ebooks.request_submitted`
-* `scheduled_task.v1` — `monitoring_reconciler` (1m) polls upstream for non-terminal requests
+## Status
+
+v0.1.0. Functional.

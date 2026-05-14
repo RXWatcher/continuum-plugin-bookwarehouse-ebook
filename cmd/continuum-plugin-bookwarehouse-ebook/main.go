@@ -55,7 +55,18 @@ func main() {
 	rt := pluginrt.New(manifest, func(cfg pluginrt.Config) error {
 		ctx := context.Background()
 
-		p, err := pgxpool.New(ctx, cfg.DatabaseURL)
+		// Explicit MaxConns cap. The pgx default scales with GOMAXPROCS and
+		// can be as low as 4; the catalog API + reconciler + consumer mix
+		// can starve under that. 16 is generous without saturating a
+		// shared Postgres. Operators override via DSN (?pool_max_conns=N).
+		pcfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("parse db: %w", err)
+		}
+		if pcfg.MaxConns < 16 {
+			pcfg.MaxConns = 16
+		}
+		p, err := pgxpool.NewWithConfig(ctx, pcfg)
 		if err != nil {
 			return fmt.Errorf("pgxpool: %w", err)
 		}

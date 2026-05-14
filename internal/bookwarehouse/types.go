@@ -53,6 +53,7 @@ type Series struct {
 type Genre struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
+	Slug  string `json:"slug,omitempty"`
 	Count int    `json:"count,omitempty"`
 }
 

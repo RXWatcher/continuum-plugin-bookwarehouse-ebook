@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
@@ -111,6 +112,31 @@ func TestClient_GetBook(t *testing.T) {
 	}
 	if d.ID != "bw-42" || len(d.Files) != 1 || d.Files[0].Format != "epub" {
 		t.Errorf("got %+v", d)
+	}
+}
+
+func TestClient_ListBooks_PassesFilterParams(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer srv.Close()
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	_, err := c.ListBooks(context.Background(), bookwarehouse.ListParams{
+		Author: "Andy Weir",
+		Series: "Bobiverse",
+		Genre:  "sci-fi",
+		Tag:    "favorite",
+	})
+	if err != nil {
+		t.Fatalf("ListBooks: %v", err)
+	}
+	// url.Values encodes alphabetically; spaces become '+'.
+	for _, want := range []string{"author=Andy+Weir", "series=Bobiverse", "genre=sci-fi", "tag=favorite"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Errorf("query %q missing %q", gotQuery, want)
+		}
 	}
 }
 

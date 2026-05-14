@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -56,6 +57,68 @@ func TestList_Returns200WithItems(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &env)
 	if len(env.Items) != 1 || env.Items[0].ID != "a" {
 		t.Errorf("env = %+v", env)
+	}
+}
+
+func TestList_PassesGenreFilterToUpstream(t *testing.T) {
+	var gotQuery string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/books" {
+			gotQuery = r.URL.RawQuery
+			_, _ = w.Write([]byte(`{"items":[]}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/catalog?genre=foo&author=Bar&series=Baz&tag=quux", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body.String())
+	}
+	for _, want := range []string{"genre=foo", "author=Bar", "series=Baz", "tag=quux"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Errorf("upstream query %q missing %q", gotQuery, want)
+		}
+	}
+}
+
+func TestBrowseGenres_RemapsIDToSlug(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/genres" {
+			_, _ = w.Write([]byte(`{"items":[{"id":"42","name":"Science Fiction","slug":"science-fiction","count":12},{"id":"7","name":"Mystery"}]}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/browse/genres", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body.String())
+	}
+	var out struct {
+		Items []bookwarehouse.Genre `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Items) != 2 {
+		t.Fatalf("items = %+v", out.Items)
+	}
+	// First item has a slug — id should be remapped.
+	if out.Items[0].ID != "science-fiction" {
+		t.Errorf("expected id=science-fiction, got %q", out.Items[0].ID)
+	}
+	// Second item has no slug — id stays as-is.
+	if out.Items[1].ID != "7" {
+		t.Errorf("expected fallback id=7, got %q", out.Items[1].ID)
 	}
 }
 

@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -33,20 +34,32 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/requests/{external_id}", h.RequestSnapshot())
 }
 
-// List handles GET /api/v1/catalog
+// List handles GET /api/v1/catalog. Optional filter query params author,
+// series, genre, tag pass through to the upstream books endpoint untouched.
+// genre must be the upstream genre slug (NOT the row id) — see BrowseGenres
+// for how this surface remaps id→slug for downstream consumers.
 func (h *Handler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p := bookwarehouse.ListParams{
 			Cursor: r.URL.Query().Get("cursor"),
 			Sort:   r.URL.Query().Get("sort"),
 			Order:  r.URL.Query().Get("order"),
+			Author: r.URL.Query().Get("author"),
+			Series: r.URL.Query().Get("series"),
+			Genre:  r.URL.Query().Get("genre"),
+			Tag:    r.URL.Query().Get("tag"),
 		}
 		if l := r.URL.Query().Get("limit"); l != "" {
 			if n, err := strconv.Atoi(l); err == nil {
 				p.Limit = n
 			}
 		}
-		out, err := h.client.ListBooks(r.Context(), p)
+		// Use the dedup wrapper so visual duplicates (multiple editions
+		// of the same book stored as separate upstream rows) don't show
+		// twice in a single page, and so the client's infinite-scroll
+		// observer never sees an empty-after-filter page (which would
+		// keep it firing forever).
+		out, err := h.client.ListBooksDeduped(r.Context(), p, 5)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
@@ -109,10 +122,35 @@ func (h *Handler) BrowseSeries() http.HandlerFunc {
 	})
 }
 
+// BrowseGenres returns each genre with its SLUG in the id field (not the
+// upstream row id), because downstream consumers use this value as the
+// genre filter on /catalog, and the upstream books endpoint matches genres
+// by slug. See ListBooks query: g.slug = ? in bookwarehouse/handlers/books.go.
 func (h *Handler) BrowseGenres() http.HandlerFunc {
-	return browseHandler(func(ctx context.Context, cursor string, limit int) (any, error) {
-		return h.client.ListGenres(ctx, cursor, limit)
-	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		cursor := r.URL.Query().Get("cursor")
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil {
+				limit = n
+			}
+		}
+		out, err := h.client.ListGenres(r.Context(), cursor, limit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		// Remap id→slug so the returned id is the value the /catalog?genre=
+		// filter expects. Fall back to the original id if slug is empty
+		// (defensive — upstream always populates slug today).
+		for i := range out.Items {
+			if out.Items[i].Slug != "" {
+				out.Items[i].ID = out.Items[i].Slug
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+	}
 }
 
 func (h *Handler) BrowseTags() http.HandlerFunc {
@@ -144,18 +182,49 @@ func (h *Handler) Cover() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bookID := chi.URLParam(r, "book_id")
 		size := chi.URLParam(r, "size")
-		http.Redirect(w, r, h.client.CoverURL(bookID, size), http.StatusFound)
+		// Stream-proxy upstream cover; redirecting won't work because the
+		// upstream cover endpoint requires X-API-Key auth that the browser
+		// won't send. Upstream maps `large` to `original`.
+		upstreamSize := size
+		if upstreamSize == "large" {
+			upstreamSize = "original"
+		}
+		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+bookID+"/cover/"+upstreamSize)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		for _, k := range []string{"Content-Type", "Content-Length", "ETag", "Cache-Control", "Last-Modified"} {
+			if v := resp.Header.Get(k); v != "" {
+				w.Header().Set(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
 	}
 }
 
 func (h *Handler) File() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bookID := chi.URLParam(r, "book_id")
-		format := r.URL.Query().Get("format")
-		if format == "" {
-			format = "epub"
+		// Upstream BookWarehouse: GET /api/v1/books/{id}/download → bytes of
+		// the single stored file (`format` is informational — upstream chose
+		// the file_format at ingest). API key auth required, so we stream-
+		// proxy rather than 302.
+		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+bookID+"/download")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
 		}
-		http.Redirect(w, r, h.client.FileURL(bookID, format), http.StatusFound)
+		defer resp.Body.Close()
+		for _, k := range []string{"Content-Type", "Content-Length", "Content-Disposition", "ETag", "Cache-Control", "Last-Modified", "Accept-Ranges"} {
+			if v := resp.Header.Get(k); v != "" {
+				w.Header().Set(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
 	}
 }
 

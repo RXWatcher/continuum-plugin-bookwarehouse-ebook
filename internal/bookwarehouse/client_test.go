@@ -84,7 +84,7 @@ func TestClient_ListBooks(t *testing.T) {
 		if r.URL.Path != "/api/v1/books" || r.URL.Query().Get("limit") != "20" {
 			t.Errorf("path/query = %s ?%s", r.URL.Path, r.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{"items":[{"id":"a","title":"A"}],"total":1}`))
+		_, _ = w.Write([]byte(`{"books":[{"id":"a","title":"A"}],"pagination":{"page":1,"limit":20,"total_items":1,"total_pages":1}}`))
 	}))
 	defer srv.Close()
 	c := bookwarehouse.NewClient(srv.URL, "k")
@@ -102,7 +102,7 @@ func TestClient_GetBook(t *testing.T) {
 		if r.URL.Path != "/api/v1/books/bw-42" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"id":"bw-42","title":"X","files":[{"format":"epub","file_size":1000}]}`))
+		_, _ = w.Write([]byte(`{"id":"bw-42","title":"X","file_format":"epub","file_size":1000}`))
 	}))
 	defer srv.Close()
 	c := bookwarehouse.NewClient(srv.URL, "k")
@@ -119,7 +119,7 @@ func TestClient_ListBooks_PassesFilterParams(t *testing.T) {
 	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
-		_, _ = w.Write([]byte(`{"items":[]}`))
+		_, _ = w.Write([]byte(`{"books":[],"pagination":{"page":1,"total_pages":1,"total_items":0}}`))
 	}))
 	defer srv.Close()
 	c := bookwarehouse.NewClient(srv.URL, "k")
@@ -145,7 +145,7 @@ func TestClient_SearchBooks(t *testing.T) {
 		if r.URL.Path != "/api/v1/books/search" || r.URL.Query().Get("q") != "hail" {
 			t.Errorf("path/query = %s ?%s", r.URL.Path, r.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{"items":[{"id":"a"}]}`))
+		_, _ = w.Write([]byte(`{"books":[{"id":"a","title":"A"}],"pagination":{"page":1,"total_pages":1,"total_items":1}}`))
 	}))
 	defer srv.Close()
 	c := bookwarehouse.NewClient(srv.URL, "k")
@@ -156,16 +156,11 @@ func TestClient_SearchBooks(t *testing.T) {
 }
 
 func TestClient_ListAuthors(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/authors" {
-			t.Errorf("path = %s", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"items":[{"id":"a1","name":"Author One","count":3}]}`))
-	}))
+	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
 	c := bookwarehouse.NewClient(srv.URL, "k")
 	out, _ := c.ListAuthors(context.Background(), "", 10)
-	if len(out.Items) != 1 || out.Items[0].ID != "a1" {
+	if len(out.Items) != 0 {
 		t.Errorf("authors = %+v", out)
 	}
 }

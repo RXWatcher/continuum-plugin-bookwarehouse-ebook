@@ -18,13 +18,11 @@ func upstream(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/books":
-			_, _ = w.Write([]byte(`{"items":[{"id":"a","title":"A","formats":["epub"]}],"total":1}`))
+			_, _ = w.Write([]byte(`{"books":[{"id":"a","title":"A","file_format":"epub"}],"pagination":{"page":1,"limit":10,"total_items":1,"total_pages":1}}`))
 		case "/api/v1/books/search":
-			_, _ = w.Write([]byte(`{"items":[{"id":"b","title":"B","formats":["pdf"]}]}`))
+			_, _ = w.Write([]byte(`{"books":[{"id":"b","title":"B","file_format":"pdf"}],"pagination":{"page":1,"total_items":1,"total_pages":1}}`))
 		case "/api/v1/books/a":
-			_, _ = w.Write([]byte(`{"id":"a","title":"A","formats":["epub"],"files":[{"format":"epub","file_size":1024}]}`))
-		case "/api/v1/authors":
-			_, _ = w.Write([]byte(`{"items":[{"id":"a1","name":"Author One","count":3}]}`))
+			_, _ = w.Write([]byte(`{"id":"a","title":"A","file_format":"epub","file_size":1024}`))
 		case "/api/v1/external_search":
 			_, _ = w.Write([]byte(`{"items":[{"source_id":"ol-1","source":"openlibrary","title":"X"}]}`))
 		case "/api/v1/monitoring/mon-99":
@@ -65,7 +63,7 @@ func TestList_PassesGenreFilterToUpstream(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/books" {
 			gotQuery = r.URL.RawQuery
-			_, _ = w.Write([]byte(`{"items":[]}`))
+			_, _ = w.Write([]byte(`{"books":[],"pagination":{"page":1,"total_pages":1,"total_items":0}}`))
 			return
 		}
 		w.WriteHeader(404)
@@ -89,7 +87,7 @@ func TestList_PassesGenreFilterToUpstream(t *testing.T) {
 func TestBrowseGenres_RemapsIDToSlug(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/genres" {
-			_, _ = w.Write([]byte(`{"items":[{"id":"42","name":"Science Fiction","slug":"science-fiction","count":12},{"id":"7","name":"Mystery"}]}`))
+			_, _ = w.Write([]byte(`{"genres":[{"id":42,"name":"Science Fiction","slug":"science-fiction","book_count":12},{"id":7,"name":"Mystery","book_count":3}],"pagination":{"page":1,"total_pages":1,"total_items":2}}`))
 			return
 		}
 		w.WriteHeader(404)
@@ -168,31 +166,53 @@ func TestBrowseAuthors_Returns200(t *testing.T) {
 	}
 }
 
-func TestCover_Redirects302(t *testing.T) {
-	c := bookwarehouse.NewClient("https://up.example", "k")
+func TestCover_StreamProxiesBytes(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/books/bw-7/cover/original" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "k" {
+			t.Errorf("X-API-Key = %q", got)
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("cover"))
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
 	r := newRouter(c)
 	req := httptest.NewRequest("GET", "/cover/bw-7/large", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusFound {
+	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d", w.Code)
 	}
-	if got := w.Header().Get("Location"); got != "https://up.example/api/v1/books/bw-7/cover/large" {
-		t.Errorf("Location = %q", got)
+	if got := w.Body.String(); got != "cover" {
+		t.Errorf("body = %q", got)
 	}
 }
 
-func TestFile_Redirects302(t *testing.T) {
-	c := bookwarehouse.NewClient("https://up.example", "k")
+func TestFile_StreamProxiesBytes(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/books/bw-7/download" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "k" {
+			t.Errorf("X-API-Key = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/epub+zip")
+		_, _ = w.Write([]byte("book"))
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
 	r := newRouter(c)
 	req := httptest.NewRequest("GET", "/file/bw-7?format=epub", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusFound {
+	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d", w.Code)
 	}
-	if got := w.Header().Get("Location"); got != "https://up.example/api/v1/books/bw-7/files/epub" {
-		t.Errorf("Location = %q", got)
+	if got := w.Body.String(); got != "book" {
+		t.Errorf("body = %q", got)
 	}
 }
 

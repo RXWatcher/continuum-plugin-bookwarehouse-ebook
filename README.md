@@ -24,14 +24,19 @@ Emits to the bus: `request_acknowledged`, `request_status_changed`, `request_ful
 | `request_quality_profile` | no | BookWarehouse-side quality tier for new requests. |
 | `enable_auto_monitoring` | no | Flips the `auto_monitoring` feature flag in capabilities; off by default. |
 
-## Compared to `continuum.ebookdb`
+## Provider Role
 
-| | `bookwarehouse-ebook` | `ebookdb` |
-|---|---|---|
-| Backing service | Calibre / BookWarehouse | Anna's-Archive-style EbookDB |
-| Long-lived monitoring | yes (when enabled) | no — one-shot fetch |
-| Formats | per-library | typically 9 (epub, pdf, mobi, azw3, fb2, lit, lrf, pdb, prc) |
-| Features | `auto_monitoring` available | `external_search` only |
+This plugin can act as both a presentation library source and a download
+provider for the Ebooks portal:
+
+- `ebook_roles`: `library_source`, `download_provider`
+- `supports_catalog`: true
+- `supports_requests`: true
+- `supports_auto_monitoring`: controlled by `enable_auto_monitoring`
+
+Use the Ebooks portal admin UI to decide which user-facing libraries point at
+this source and whether requests should route here or to another download
+provider.
 
 ## Dependencies
 

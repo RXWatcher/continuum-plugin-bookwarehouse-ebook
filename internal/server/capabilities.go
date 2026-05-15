@@ -13,7 +13,14 @@ type capabilitiesResponse struct {
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, _ *http.Request) {
-	feats := []string{"external_search"}
+	feats := []string{
+		"library_source",
+		"download_provider",
+		"external_search",
+		"request_snapshot",
+		"admin_diagnostics",
+		"provider_test_search",
+	}
 	if s.deps.EnableAutoMonitoring {
 		feats = append(feats, "auto_monitoring")
 	}

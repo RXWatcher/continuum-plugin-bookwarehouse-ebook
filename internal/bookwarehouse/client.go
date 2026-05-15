@@ -35,6 +35,15 @@ func NewClient(baseURL, apiKey string) *Client {
 
 func (c *Client) BaseURL() string { return c.baseURL }
 
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.Get(ctx, "/api/v1/health")
+	if err == nil {
+		return nil
+	}
+	_, err = c.Get(ctx, "/health")
+	return err
+}
+
 func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
 	if err != nil {

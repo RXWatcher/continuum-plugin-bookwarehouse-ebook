@@ -44,9 +44,9 @@ func main() {
 	httpSrv := httproutes.NewServer()
 
 	var (
-		poolPtr        atomic.Pointer[pgxpool.Pool]
-		consumerDepsP  atomic.Pointer[consumer.Deps]
-		reconcilerPtr  atomic.Pointer[reconciler.Reconciler]
+		poolPtr       atomic.Pointer[pgxpool.Pool]
+		consumerDepsP atomic.Pointer[consumer.Deps]
+		reconcilerPtr atomic.Pointer[reconciler.Reconciler]
 	)
 
 	consumerHandler := consumer.New(func() *consumer.Deps { return consumerDepsP.Load() })
@@ -80,6 +80,8 @@ func main() {
 		srv := server.New(server.Deps{
 			EnableAutoMonitoring: cfg.EnableAutoMonitoring,
 			BookwarehouseClient:  bwClient,
+			Store:                st,
+			Config:               cfg,
 		})
 		httpSrv.SetHandler(srv.Handler())
 

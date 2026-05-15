@@ -167,21 +167,21 @@ func (c *Client) ListBooks(ctx context.Context, p ListParams) (Paged[Book], erro
 	// isbn13, etc. — see LibraryManager's types.ts for the canonical contract.
 	var upstream struct {
 		Books []struct {
-			ID         string `json:"id"`
-			Title      string `json:"title"`
-			Author     string `json:"author"`
-			Authors    []struct {
+			ID      string `json:"id"`
+			Title   string `json:"title"`
+			Author  string `json:"author"`
+			Authors []struct {
 				Name string `json:"name"`
 			} `json:"authors"`
-			ISBN13       string  `json:"isbn13"`
-			Publisher    string  `json:"publisher"`
-			PublishedAt  string  `json:"published_date"`
-			Language     string  `json:"language"`
-			HasCover     bool    `json:"has_cover"`
-			CoverURL     string  `json:"cover_url"`
-			FileFormat   string  `json:"file_format"`
-			SeriesName   string  `json:"series"`
-			SeriesIndex  float64 `json:"series_index"`
+			ISBN13      string  `json:"isbn13"`
+			Publisher   string  `json:"publisher"`
+			PublishedAt string  `json:"published_date"`
+			Language    string  `json:"language"`
+			HasCover    bool    `json:"has_cover"`
+			CoverURL    string  `json:"cover_url"`
+			FileFormat  string  `json:"file_format"`
+			SeriesName  string  `json:"series"`
+			SeriesIndex float64 `json:"series_index"`
 		} `json:"books"`
 		Pagination struct {
 			Page       int `json:"page"`
@@ -251,10 +251,10 @@ func (c *Client) GetBook(ctx context.Context, id string) (BookDetail, error) {
 	// file_format (singular), file_size, isbn13, published_date — same shape
 	// mismatches as ListBooks. Map them through an inline struct.
 	var ub struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		Author      string `json:"author"`
-		Authors     []struct {
+		ID      string `json:"id"`
+		Title   string `json:"title"`
+		Author  string `json:"author"`
+		Authors []struct {
 			Name string `json:"name"`
 		} `json:"authors"`
 		ISBN13      string `json:"isbn13"`

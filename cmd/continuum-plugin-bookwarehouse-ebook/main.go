@@ -94,6 +94,7 @@ func main() {
 		})
 		reconcilerPtr.Store(reconciler.New(reconciler.Deps{
 			Store: st, Pub: ev, BW: bwClient,
+			PluginID: "continuum.bookwarehouse-ebook",
 		}))
 
 		if old := poolPtr.Swap(p); old != nil {

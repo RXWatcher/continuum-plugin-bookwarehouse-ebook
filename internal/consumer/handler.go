@@ -44,10 +44,10 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 		return &pluginv1.HandleEventResponse{}, nil
 	}
 	p := req.GetPayload().AsMap()
-	if target, _ := p["target_plugin_id"].(string); target != d.PluginID {
+	if target := targetPluginIDFromPayload(p); target != d.PluginID {
 		return &pluginv1.HandleEventResponse{}, nil
 	}
-	requestID, _ := p["request_id"].(string)
+	requestID := requestIDFromPayload(p)
 	if requestID == "" {
 		return &pluginv1.HandleEventResponse{}, nil
 	}
@@ -77,8 +77,10 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 			UpdatedAt:   time.Now(),
 		})
 		d.Pub.Publish(ctx, "request_failed", map[string]any{
-			"request_id": requestID,
-			"reason":     err.Error(),
+			"request_id":         requestID,
+			"requestId":          requestID,
+			"provider_plugin_id": d.PluginID,
+			"reason":             err.Error(),
 		})
 		return &pluginv1.HandleEventResponse{}, nil
 	}
@@ -90,10 +92,29 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 		UpdatedAt:   time.Now(),
 	})
 	d.Pub.Publish(ctx, "request_acknowledged", map[string]any{
-		"request_id":  requestID,
-		"external_id": resp.ID,
+		"request_id":         requestID,
+		"requestId":          requestID,
+		"external_id":        resp.ID,
+		"provider_plugin_id": d.PluginID,
 	})
 	return &pluginv1.HandleEventResponse{}, nil
+}
+
+func targetPluginIDFromPayload(m map[string]any) string {
+	for _, key := range []string{"target_plugin_id", "target_provider_plugin_id", "provider_plugin_id"} {
+		if v, _ := m[key].(string); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func requestIDFromPayload(m map[string]any) string {
+	if id, _ := m["request_id"].(string); id != "" {
+		return id
+	}
+	id, _ := m["requestId"].(string)
+	return id
 }
 
 func stringField(m map[string]any, k string) string {

@@ -37,6 +37,9 @@ func (c *Client) AddMonitoring(ctx context.Context, r MonitoringRequest) (Monito
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return MonitoringResponse{}, fmt.Errorf("decode monitoring response: %w", err)
 	}
+	if out.ID == "" {
+		return MonitoringResponse{}, fmt.Errorf("monitoring/add: upstream returned no id: %s", truncForError(respBody))
+	}
 	return out, nil
 }
 
@@ -48,6 +51,13 @@ func (c *Client) GetMonitoring(ctx context.Context, externalID string) (Monitori
 	var out MonitoringResponse
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return MonitoringResponse{}, fmt.Errorf("decode monitoring snapshot: %w", err)
+	}
+	// json.Unmarshal does not error on a 2xx body lacking id+status ({},
+	// {"detail":...}, null). A nil error here makes the reconciler treat the
+	// poll as successful: it holds the row's status forever and clears
+	// sticky error_text — silently masking a lost upstream request.
+	if out.ID == "" && out.Status == "" {
+		return MonitoringResponse{}, fmt.Errorf("monitoring snapshot: invalid response: %s", truncForError(respBody))
 	}
 	return out, nil
 }

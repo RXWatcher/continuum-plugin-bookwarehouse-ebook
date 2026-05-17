@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -45,27 +46,50 @@ func normalizeCoverSize(s string) string {
 }
 
 type Client struct {
-	baseURL          string
-	apiKey           string
-	hc               *http.Client
-	defaultCoverSize string
+	baseURL string
+	apiKey  string
+	hc      *http.Client
+	// defaultCoverSize is written by SetDefaultCoverSize (from Configure) and
+	// read concurrently by in-flight catalog requests, so it is atomic.
+	defaultCoverSize atomic.Pointer[string]
 }
 
 func NewClient(baseURL, apiKey string) *Client {
-	return &Client{
-		baseURL:          strings.TrimRight(baseURL, "/"),
-		apiKey:           apiKey,
-		hc:               &http.Client{Timeout: defaultTimeout},
-		defaultCoverSize: defaultCoverSizeFallback,
+	c := &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		apiKey:  apiKey,
+		hc: &http.Client{
+			Timeout: defaultTimeout,
+			// X-API-Key is a custom header, so Go's default redirect logic
+			// (which only strips Authorization/Cookie/WWW-Auth cross-host)
+			// would forward the upstream credential to a redirect target.
+			// Strip it on any cross-host hop and cap the chain.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return http.ErrUseLastResponse
+				}
+				if req.URL.Host != via[0].URL.Host {
+					req.Header.Del("X-API-Key")
+				}
+				return nil
+			},
+		},
 	}
+	def := defaultCoverSizeFallback
+	c.defaultCoverSize.Store(&def)
+	return c
 }
 
 // SetDefaultCoverSize sets the cover size used when building portal-relative
 // cover URLs. Invalid/empty values fall back to the documented default
 // ("large"). Called from Configure so operator changes take effect.
 func (c *Client) SetDefaultCoverSize(size string) {
-	c.defaultCoverSize = normalizeCoverSize(size)
+	v := normalizeCoverSize(size)
+	c.defaultCoverSize.Store(&v)
 }
+
+// coverSize returns the configured default cover size.
+func (c *Client) coverSize() string { return *c.defaultCoverSize.Load() }
 
 func (c *Client) BaseURL() string { return c.baseURL }
 

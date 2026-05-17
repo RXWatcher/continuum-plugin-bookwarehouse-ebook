@@ -241,7 +241,7 @@ func (c *Client) ListBooks(ctx context.Context, p ListParams) (Paged[Book], erro
 			// Portal mounts /cover/{id}/{size} as a public route (no auth
 			// header needed) so browser <img> tags can render. The portal
 			// proxies through to backend's /api/v1/cover endpoint.
-			b.CoverURL = "/cover/" + ub.ID + "/medium"
+			b.CoverURL = "/cover/" + ub.ID + "/" + c.defaultCoverSize
 		}
 		if len(ub.Authors) > 0 {
 			b.Authors = make([]string, len(ub.Authors))
@@ -313,7 +313,7 @@ func (c *Client) GetBook(ctx context.Context, id string) (BookDetail, error) {
 		Description: ub.Description,
 	}
 	if ub.HasCover {
-		out.CoverURL = "/cover/" + ub.ID + "/medium"
+		out.CoverURL = "/cover/" + ub.ID + "/" + c.defaultCoverSize
 	}
 	if len(ub.Authors) > 0 {
 		out.Authors = make([]string, len(ub.Authors))

@@ -31,18 +31,40 @@ func truncForError(b []byte) string {
 	return string(b[:errBodySnippet]) + "…(truncated)"
 }
 
+// defaultCoverSizeFallback is the manifest-documented default for the
+// default_cover_size config key ("Defaults to large").
+const defaultCoverSizeFallback = "large"
+
+func normalizeCoverSize(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "small", "medium", "large", "original":
+		return strings.ToLower(strings.TrimSpace(s))
+	default:
+		return defaultCoverSizeFallback
+	}
+}
+
 type Client struct {
-	baseURL string
-	apiKey  string
-	hc      *http.Client
+	baseURL          string
+	apiKey           string
+	hc               *http.Client
+	defaultCoverSize string
 }
 
 func NewClient(baseURL, apiKey string) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  apiKey,
-		hc:      &http.Client{Timeout: defaultTimeout},
+		baseURL:          strings.TrimRight(baseURL, "/"),
+		apiKey:           apiKey,
+		hc:               &http.Client{Timeout: defaultTimeout},
+		defaultCoverSize: defaultCoverSizeFallback,
 	}
+}
+
+// SetDefaultCoverSize sets the cover size used when building portal-relative
+// cover URLs. Invalid/empty values fall back to the documented default
+// ("large"). Called from Configure so operator changes take effect.
+func (c *Client) SetDefaultCoverSize(size string) {
+	c.defaultCoverSize = normalizeCoverSize(size)
 }
 
 func (c *Client) BaseURL() string { return c.baseURL }

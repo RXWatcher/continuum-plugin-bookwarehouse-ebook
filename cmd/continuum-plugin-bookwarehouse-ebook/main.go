@@ -76,6 +76,7 @@ func main() {
 		}
 		st := store.New(p)
 		bwClient := bookwarehouse.NewClient(cfg.BaseURL, cfg.APIKey)
+		bwClient.SetDefaultCoverSize(cfg.DefaultCoverSize)
 
 		srv := server.New(server.Deps{
 			EnableAutoMonitoring: cfg.EnableAutoMonitoring,

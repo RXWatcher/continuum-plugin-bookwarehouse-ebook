@@ -119,6 +119,39 @@ func TestClient_ListBooks(t *testing.T) {
 	}
 }
 
+// default_cover_size is an operator config ("Defaults to large"). It was
+// parsed but never consumed and the default never applied — cover URLs were
+// hardcoded to "medium". The cover size in built URLs must follow config,
+// defaulting to "large", and reject junk back to "large".
+func TestClient_CoverSize_FollowsConfig(t *testing.T) {
+	body := `{"books":[{"id":"bk1","title":"T","has_cover":true}],"pagination":{"page":1,"total_pages":1,"total_items":1}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	// Default (unset) -> "large" per the manifest-documented default.
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	out, _ := c.ListBooks(context.Background(), bookwarehouse.ListParams{})
+	if out.Items[0].CoverURL != "/cover/bk1/large" {
+		t.Errorf("default cover url = %q, want /cover/bk1/large", out.Items[0].CoverURL)
+	}
+
+	// Configured value is honored.
+	c.SetDefaultCoverSize("small")
+	out, _ = c.ListBooks(context.Background(), bookwarehouse.ListParams{})
+	if out.Items[0].CoverURL != "/cover/bk1/small" {
+		t.Errorf("configured cover url = %q, want /cover/bk1/small", out.Items[0].CoverURL)
+	}
+
+	// Junk falls back to "large".
+	c.SetDefaultCoverSize("ENORMOUS")
+	out, _ = c.ListBooks(context.Background(), bookwarehouse.ListParams{})
+	if out.Items[0].CoverURL != "/cover/bk1/large" {
+		t.Errorf("invalid cover size url = %q, want /cover/bk1/large", out.Items[0].CoverURL)
+	}
+}
+
 func TestClient_GetBook(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/books/bw-42" {

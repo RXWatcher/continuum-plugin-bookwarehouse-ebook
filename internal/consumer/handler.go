@@ -4,6 +4,7 @@ package consumer
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	pluginv1 "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginproto/continuum/plugin/v1"
@@ -41,7 +42,10 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 	}
 	d := h.depsFn()
 	if d == nil {
-		return &pluginv1.HandleEventResponse{}, nil
+		// Capability servers serve before Configure runs. Nack so the host
+		// redelivers once configured instead of acking and dropping the
+		// request permanently.
+		return nil, fmt.Errorf("plugin not configured yet")
 	}
 	p := req.GetPayload().AsMap()
 	if target := targetPluginIDFromPayload(p); target != d.PluginID {
@@ -53,12 +57,17 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 	}
 	autoMonitor, _ := p["auto_monitor"].(bool)
 
-	_ = d.Store.UpsertForwardedRequest(ctx, store.ForwardedRequest{
+	// Must persist: if this row is lost the reconciler never polls it and
+	// the request is permanently lost. Nack on failure (the terminal guard
+	// in UpsertForwardedRequest makes redelivery idempotent).
+	if err := d.Store.UpsertForwardedRequest(ctx, store.ForwardedRequest{
 		RequestID:   requestID,
 		Status:      "submitted",
 		AutoMonitor: autoMonitor,
 		UpdatedAt:   time.Now(),
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("persist submitted %s: %w", requestID, err)
+	}
 
 	mreq := bookwarehouse.MonitoringRequest{
 		Title:       stringField(p, "title"),
@@ -69,13 +78,17 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 	}
 	resp, err := d.BW.AddMonitoring(ctx, mreq)
 	if err != nil {
-		_ = d.Store.UpsertForwardedRequest(ctx, store.ForwardedRequest{
+		if perr := d.Store.UpsertForwardedRequest(ctx, store.ForwardedRequest{
 			RequestID:   requestID,
 			Status:      "failed",
 			ErrorText:   err.Error(),
 			AutoMonitor: autoMonitor,
 			UpdatedAt:   time.Now(),
-		})
+		}); perr != nil {
+			// Couldn't even record the failure — nack so it's retried
+			// rather than lost.
+			return nil, fmt.Errorf("persist failed %s: %w", requestID, perr)
+		}
 		d.Pub.Publish(ctx, "request_failed", map[string]any{
 			"request_id":         requestID,
 			"requestId":          requestID,
@@ -84,13 +97,17 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 		})
 		return &pluginv1.HandleEventResponse{}, nil
 	}
-	_ = d.Store.UpsertForwardedRequest(ctx, store.ForwardedRequest{
+	// Must persist the external_id: without it the reconciler skips this row
+	// forever (it requires a non-empty external_id). Nack on failure.
+	if err := d.Store.UpsertForwardedRequest(ctx, store.ForwardedRequest{
 		RequestID:   requestID,
 		ExternalID:  resp.ID,
 		Status:      "acknowledged",
 		AutoMonitor: autoMonitor,
 		UpdatedAt:   time.Now(),
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("persist acknowledged %s: %w", requestID, err)
+	}
 	d.Pub.Publish(ctx, "request_acknowledged", map[string]any{
 		"request_id":         requestID,
 		"requestId":          requestID,

@@ -203,8 +203,24 @@ func (c *Client) ListBooks(ctx context.Context, p ListParams) (Paged[Book], erro
 		Total: upstream.Pagination.TotalItems,
 		Items: make([]Book, 0, len(upstream.Books)),
 	}
-	if upstream.Pagination.Page < upstream.Pagination.TotalPages {
-		out.NextCursor = strconv.Itoa(upstream.Pagination.Page + 1)
+	// Derive the next cursor from the page we REQUESTED, not from the page
+	// upstream echoes back: some responses report page:0 (or omit it), and
+	// trusting that produced NextCursor "1" forever (re-fetching page 1 in
+	// an infinite loop) or dropped pagination after the first page.
+	requested := 1
+	if p.Cursor != "" {
+		if n, err := strconv.Atoi(p.Cursor); err == nil && n > 0 {
+			requested = n
+		}
+	}
+	switch {
+	case upstream.Pagination.TotalPages > 0:
+		if requested < upstream.Pagination.TotalPages {
+			out.NextCursor = strconv.Itoa(requested + 1)
+		}
+	case p.Limit > 0 && len(upstream.Books) >= p.Limit:
+		// TotalPages unknown but the page came back full — assume more.
+		out.NextCursor = strconv.Itoa(requested + 1)
 	}
 	for _, ub := range upstream.Books {
 		b := Book{

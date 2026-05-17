@@ -230,6 +230,41 @@ func TestClient_GetMonitoring_EscapesID(t *testing.T) {
 	}
 }
 
+// NextCursor must be derived from the page we REQUESTED, not the page
+// upstream echoes back. Some upstream responses report page:0 (or omit it);
+// trusting that produced NextCursor "1" forever (re-fetching page 1 in an
+// infinite loop) or dropped pagination entirely.
+func TestClient_ListBooks_NextCursorFromRequestedPage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "2" {
+			t.Errorf("expected page=2, got %q", r.URL.Query().Get("page"))
+		}
+		// Upstream echoes page:0 (unreliable) but reports 3 total pages.
+		_, _ = w.Write([]byte(`{"books":[{"id":"x","title":"X"}],"pagination":{"page":0,"limit":50,"total_items":150,"total_pages":3}}`))
+	}))
+	defer srv.Close()
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	out, err := c.ListBooks(context.Background(), bookwarehouse.ListParams{Cursor: "2"})
+	if err != nil {
+		t.Fatalf("ListBooks: %v", err)
+	}
+	if out.NextCursor != "3" {
+		t.Errorf("NextCursor = %q, want \"3\" (requested page 2 + 1)", out.NextCursor)
+	}
+}
+
+func TestClient_ListBooks_NoNextCursorOnLastPage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"books":[{"id":"x"}],"pagination":{"page":0,"total_items":150,"total_pages":3}}`))
+	}))
+	defer srv.Close()
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	out, _ := c.ListBooks(context.Background(), bookwarehouse.ListParams{Cursor: "3"})
+	if out.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want empty on the last page", out.NextCursor)
+	}
+}
+
 // dedupKey must not collapse distinct works. Different volumes of a series
 // share title+author but differ by series_index; they are separate books and
 // must both appear, otherwise readers can never reach later volumes.

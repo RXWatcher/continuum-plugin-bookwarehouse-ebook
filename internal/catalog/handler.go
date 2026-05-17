@@ -105,8 +105,21 @@ func (h *Handler) Libraries() http.HandlerFunc {
 
 func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
-		out, err := h.client.ListBooks(r.Context(), bookwarehouse.ListParams{Query: q})
+		p := bookwarehouse.ListParams{
+			Query:  r.URL.Query().Get("q"),
+			Cursor: r.URL.Query().Get("cursor"),
+			Sort:   r.URL.Query().Get("sort"),
+			Order:  r.URL.Query().Get("order"),
+		}
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if n, err := strconv.Atoi(l); err == nil {
+				p.Limit = n
+			}
+		}
+		// Same dedup safety brake as List so search infinite-scroll doesn't
+		// loop on an all-duplicate page and pagination params are honored
+		// (previously only ?q= was forwarded, pinning results to page 1).
+		out, err := h.client.ListBooksDeduped(r.Context(), p, 5)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return

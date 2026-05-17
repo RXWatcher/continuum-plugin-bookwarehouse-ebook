@@ -135,6 +135,36 @@ func TestSearch_Returns200WithItems(t *testing.T) {
 	}
 }
 
+// Search must forward pagination/sort params so infinite scroll works;
+// previously it sent only ?q= and always returned upstream page 1.
+func TestSearch_PassesPaginationParams(t *testing.T) {
+	var gotQuery string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/books/search" {
+			if gotQuery == "" { // capture the first fan-out request
+				gotQuery = r.URL.RawQuery
+			}
+			_, _ = w.Write([]byte(`{"books":[{"id":"b","title":"B"}],"pagination":{"page":2,"total_pages":3,"total_items":3}}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/catalog/search?q=hail&cursor=2&limit=5&sort=title&order=desc", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("code = %d body=%s", w.Code, w.Body.String())
+	}
+	for _, want := range []string{"q=hail", "page=2", "limit=5", "sort=title", "order=desc"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Errorf("upstream query %q missing %q", gotQuery, want)
+		}
+	}
+}
+
 func TestDetail_Returns200(t *testing.T) {
 	up := upstream(t)
 	defer up.Close()

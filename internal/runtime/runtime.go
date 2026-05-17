@@ -7,6 +7,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/url"
 	"sync"
 
 	pluginv1 "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginproto/continuum/plugin/v1"
@@ -26,6 +28,29 @@ type Config struct {
 func (c Config) Configured() bool {
 	return c.BaseURL != "" && c.APIKey != "" && c.DatabaseURL != ""
 }
+
+func mask(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "***redacted***"
+}
+
+// LogValue implements slog.LogValuer so slog.Any("cfg", c) never serializes
+// the API key or the DSN (which embeds the DB password).
+func (c Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("database_url", mask(c.DatabaseURL)),
+		slog.String("base_url", c.BaseURL),
+		slog.String("api_key", mask(c.APIKey)),
+		slog.String("default_cover_size", c.DefaultCoverSize),
+		slog.String("request_quality_profile", c.RequestQualityProfile),
+		slog.Bool("enable_auto_monitoring", c.EnableAutoMonitoring),
+	)
+}
+
+// String implements fmt.Stringer with the same redaction.
+func (c Config) String() string { return c.LogValue().String() }
 
 // Server implements the plugin's Runtime service.
 type Server struct {
@@ -78,6 +103,9 @@ func (s *Server) Configure(_ context.Context, req *pluginv1.ConfigureRequest) (*
 	}
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("api_key is required")
+	}
+	if u, err := url.Parse(cfg.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("base_url must be a valid http(s) URL")
 	}
 	if s.onCfg != nil {
 		if err := s.onCfg(cfg); err != nil {

@@ -8,6 +8,10 @@ Continuum's `ebook_backend.v1` capability.
 Use this plugin when BookWarehouse owns your ebook library and Continuum should
 provide the user portal, OPDS/Kobo/Kindle integrations, and request workflow.
 
+## Detailed Operations Docs
+
+- [Setup, debugging, and communication flows](docs/setup-debug-flows.md)
+
 ## Features
 
 - Catalog, search, detail, cover, and ebook file endpoints for

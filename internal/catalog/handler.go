@@ -260,13 +260,16 @@ func (h *Handler) File() http.HandlerFunc {
 		// the single stored file (`format` is informational — upstream chose
 		// the file_format at ingest). API key auth required, so we stream-
 		// proxy rather than 302.
-		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+url.PathEscape(bookID)+"/download")
+		// Forward the client's Range so seek/resume (readers, Kindle) gets a
+		// 206 instead of silently re-downloading the whole file — we already
+		// advertise Accept-Ranges below.
+		resp, err := h.client.GetStreamWithRange(r.Context(), "/api/v1/books/"+url.PathEscape(bookID)+"/download", r.Header.Get("Range"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
-		for _, k := range []string{"Content-Type", "Content-Length", "Content-Disposition", "ETag", "Cache-Control", "Last-Modified", "Accept-Ranges"} {
+		for _, k := range []string{"Content-Type", "Content-Length", "Content-Disposition", "Content-Range", "ETag", "Cache-Control", "Last-Modified", "Accept-Ranges"} {
 			if v := resp.Header.Get(k); v != "" {
 				w.Header().Set(k, v)
 			}

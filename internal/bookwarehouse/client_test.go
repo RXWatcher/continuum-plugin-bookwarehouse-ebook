@@ -27,6 +27,28 @@ func TestClient_SendsAPIKeyHeader(t *testing.T) {
 	}
 }
 
+// A broken/hostile upstream can return a huge error body. It must not be
+// inlined whole into the error string (it propagates into logs / responses).
+func TestClient_Get_TruncatesErrorBody(t *testing.T) {
+	big := strings.Repeat("x", 50000)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(big))
+	}))
+	defer srv.Close()
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	_, err := c.Get(context.Background(), "/x")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if len(err.Error()) > 1024 {
+		t.Errorf("error not truncated: %d bytes", len(err.Error()))
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should mention status: %q", err.Error())
+	}
+}
+
 func TestClient_TrimsTrailingSlash(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

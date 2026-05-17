@@ -246,6 +246,40 @@ func TestFile_StreamProxiesBytes(t *testing.T) {
 	}
 }
 
+// File advertises Accept-Ranges, so a reader/Kindle sends Range. The client
+// Range header must reach upstream and the 206 + Content-Range must pass back
+// through, otherwise seek/resume silently downloads the whole file.
+func TestFile_ForwardsRangeAndPartialContent(t *testing.T) {
+	var gotRange string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		w.Header().Set("Content-Type", "application/epub+zip")
+		w.Header().Set("Content-Range", "bytes 0-9/100")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("0123456789"))
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/file/bw-7?format=epub", nil)
+	req.Header.Set("Range", "bytes=0-9")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if gotRange != "bytes=0-9" {
+		t.Errorf("upstream Range = %q, want bytes=0-9", gotRange)
+	}
+	if w.Code != http.StatusPartialContent {
+		t.Errorf("code = %d, want 206", w.Code)
+	}
+	if w.Header().Get("Content-Range") != "bytes 0-9/100" {
+		t.Errorf("Content-Range = %q", w.Header().Get("Content-Range"))
+	}
+	if w.Body.String() != "0123456789" {
+		t.Errorf("body = %q", w.Body.String())
+	}
+}
+
 func TestExternalSearch_Returns200(t *testing.T) {
 	up := upstream(t)
 	defer up.Close()

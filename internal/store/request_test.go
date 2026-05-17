@@ -62,6 +62,57 @@ func TestListNonTerminal(t *testing.T) {
 	}
 }
 
+// Rows that have never been polled all share last_polled (epoch). Without a
+// tiebreaker their order is undefined, so under LIMIT the same subset can be
+// returned every tick while the rest starve. Order must be deterministic
+// (last_polled ASC, request_id ASC).
+func TestListNonTerminal_DeterministicTiebreak(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// Insert in reverse id order; never polled (no last_polled).
+	for _, id := range []string{"req-3", "req-2", "req-1"} {
+		_ = s.UpsertForwardedRequest(ctx, store.ForwardedRequest{
+			RequestID: id, Status: "submitted", UpdatedAt: time.Now(),
+		})
+	}
+	rows, err := s.ListNonTerminal(ctx, 100)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	got := []string{rows[0].RequestID, rows[1].RequestID, rows[2].RequestID}
+	want := []string{"req-1", "req-2", "req-3"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %v, want %v (no deterministic tiebreaker)", got, want)
+		}
+	}
+}
+
+// Unsubmitted means "no external_id yet AND still in flight". A failed row
+// with no external_id must count as failed only, not also as unsubmitted.
+func TestRequestStats_UnsubmittedExcludesTerminal(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	// Genuinely unsubmitted: in flight, no external_id.
+	_ = s.UpsertForwardedRequest(ctx, store.ForwardedRequest{
+		RequestID: "pending", Status: "submitted", UpdatedAt: time.Now(),
+	})
+	// Failed before AddMonitoring returned an id: no external_id.
+	_ = s.UpsertForwardedRequest(ctx, store.ForwardedRequest{
+		RequestID: "dead", Status: "failed", ErrorText: "boom", UpdatedAt: time.Now(),
+	})
+	stats, err := s.RequestStats(ctx)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if stats.Unsubmitted != 1 {
+		t.Errorf("Unsubmitted = %d, want 1 (failed row must not be counted)", stats.Unsubmitted)
+	}
+	if stats.Failed != 1 {
+		t.Errorf("Failed = %d, want 1", stats.Failed)
+	}
+}
+
 // Event delivery is at-least-once: a duplicate/late/replayed request_submitted
 // (status "submitted"/"acknowledged") must not resurrect a row that already
 // reached a terminal state (imported or failed).

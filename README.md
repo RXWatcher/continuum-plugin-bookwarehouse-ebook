@@ -1,49 +1,42 @@
-# continuum-plugin-bookwarehouse-ebook
+# BookWarehouse Ebooks for Continuum
 
-Thin adapter exposing a Calibre-backed BookWarehouse instance to the [`continuum.ebooks`](../continuum-plugin-ebooks/) portal via the `ebook_backend.v1` capability. Maintains long-lived monitoring on requests (Sonarr-style: keep searching until found) when `enable_auto_monitoring` is on.
+`continuum.bookwarehouse-ebook` connects the Continuum Ebooks portal to a
+Calibre-backed BookWarehouse instance. It exposes owned-library catalog data,
+cover art, file delivery, external search, and request monitoring through
+Continuum's `ebook_backend.v1` capability.
 
-## Capabilities
+Use this plugin when BookWarehouse owns your ebook library and Continuum should
+provide the user portal, OPDS/Kobo/Kindle integrations, and request workflow.
 
-| Capability | Notes |
-|---|---|
-| `ebook_backend.v1` (`default`) | Owned-library ebook source. |
-| `http_routes.v1` (`backend`) | `/api/v1/{health,capabilities,catalog,catalog/{id},catalog/search,cover/{id}/{size},file/{id},requests,requests/{external_id},external_search}`. |
-| `event_consumer.v1` (`request_handler`) | Subscribes to `plugin.continuum.ebooks.request_submitted`; forwards new requests to BookWarehouse monitoring. |
-| `scheduled_task.v1` (`reconciler`) | Cron `*/1 * * * *`. Polls upstream for status changes on non-terminal requests. |
+## Features
 
-Emits to the bus: `request_acknowledged`, `request_status_changed`, `request_fulfilled`, `request_failed`.
+- Catalog, search, detail, cover, and ebook file endpoints for
+  `continuum.ebooks`.
+- External search support for request previews.
+- Request forwarding from the Ebooks portal to BookWarehouse monitoring.
+- Scheduled reconciliation of non-terminal request state.
+- Optional auto-monitoring so BookWarehouse keeps searching until a requested
+  title is found.
+- No user-facing SPA; the Ebooks portal owns the UI and client protocols.
 
 ## Configuration
 
 | Key | Required | Description |
 |---|---|---|
-| `database_url` | yes | DSN for the `bookwarehouse_ebook` schema. |
+| `database_url` | yes | Postgres DSN for the `bookwarehouse_ebook` schema. |
 | `base_url` | yes | BookWarehouse base URL, no trailing slash. |
-| `api_key` | yes | `X-API-Key` for upstream calls. |
-| `default_cover_size` | no | One of `small \| medium \| large \| original` (default `large`). |
+| `api_key` | yes | API key sent to BookWarehouse as `X-API-Key`. |
+| `default_cover_size` | no | `small`, `medium`, `large`, or `original`. Defaults to `large`. |
 | `request_quality_profile` | no | BookWarehouse-side quality tier for new requests. |
-| `enable_auto_monitoring` | no | Flips the `auto_monitoring` feature flag in capabilities; off by default. |
+| `enable_auto_monitoring` | no | Enable Sonarr-style monitoring for new ebook requests. |
 
-## Provider Role
+Example DSN:
 
-This plugin can act as both a presentation library source and a download
-provider for the Ebooks portal:
+```text
+postgres://plugin_bookwarehouse_ebook:password@postgres:5432/continuum?search_path=bookwarehouse_ebook&sslmode=disable
+```
 
-- `ebook_roles`: `library_source`, `download_provider`
-- `supports_catalog`: true
-- `supports_requests`: true
-- `supports_auto_monitoring`: controlled by `enable_auto_monitoring`
-
-Use the Ebooks portal admin UI to decide which user-facing libraries point at
-this source and whether requests should route here or to another download
-provider.
-
-## Dependencies
-
-- Postgres role + `bookwarehouse_ebook` schema.
-- An external BookWarehouse/Calibre instance.
-
-## Install
+## Database Setup
 
 ```sql
 CREATE ROLE plugin_bookwarehouse_ebook WITH LOGIN PASSWORD '<chosen>';
@@ -51,15 +44,18 @@ CREATE SCHEMA bookwarehouse_ebook AUTHORIZATION plugin_bookwarehouse_ebook;
 GRANT CONNECT ON DATABASE continuum TO plugin_bookwarehouse_ebook;
 ```
 
-Then select this plugin as the ebooks-portal backend from `/admin/settings`.
+## Portal Integration
 
-## Build & test
+1. Install and configure `continuum.ebooks`.
+2. Install this plugin and configure BookWarehouse connection settings.
+3. Select `continuum.bookwarehouse-ebook` as an ebook backend or default request
+   provider in the Ebooks admin settings.
+4. Enable auto-monitoring only if the upstream BookWarehouse instance should
+   continue searching after a request is submitted.
+
+## Build And Test
 
 ```bash
-go build ./cmd/continuum-plugin-bookwarehouse-ebook
-go test ./...    # requires Postgres for store tests
+make build
+make test
 ```
-
-## Status
-
-v0.1.0. Functional.

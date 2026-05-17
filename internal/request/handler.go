@@ -7,6 +7,7 @@ package request
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
@@ -27,7 +28,11 @@ func (h *Handler) Snapshot() http.HandlerFunc {
 		}
 		snap, err := h.client.GetMonitoring(r.Context(), eid)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			// The upstream error embeds up to 512 B of the upstream body
+			// (and the transport error wraps the internal base URL); log it
+			// server-side, return a generic message to the client.
+			slog.Error("request snapshot upstream error", "external_id", eid, "err", err)
+			http.Error(w, "upstream request failed", http.StatusBadGateway)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

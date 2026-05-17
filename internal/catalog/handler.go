@@ -4,14 +4,64 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 )
+
+// maxCatalogLimit caps the page size forwarded upstream. limit is
+// attacker-controlled and was forwarded verbatim — limit=999999999 drove a
+// giant upstream fetch (amplified ×fanout) that overran the 10 MiB read cap
+// and failed to decode, turning into endpoint denial.
+const maxCatalogLimit = 100
+
+// clampLimit reads ?limit, returning def when absent/invalid/<=0 and capping
+// at maxCatalogLimit otherwise.
+func clampLimit(r *http.Request, def int) int {
+	l := r.URL.Query().Get("limit")
+	if l == "" {
+		return def
+	}
+	n, err := strconv.Atoi(l)
+	if err != nil || n <= 0 {
+		return def
+	}
+	if n > maxCatalogLimit {
+		return maxCatalogLimit
+	}
+	return n
+}
+
+// parseListParams builds the common catalog params: opaque cursor, clamped
+// limit, and allowlisted sort/order (forwarded as upstream control params).
+func parseListParams(r *http.Request) bookwarehouse.ListParams {
+	q := r.URL.Query()
+	p := bookwarehouse.ListParams{Cursor: q.Get("cursor"), Limit: clampLimit(r, 0)}
+	switch s := strings.ToLower(q.Get("sort")); s {
+	case "title", "author", "year", "series", "added", "rating":
+		p.Sort = s
+	}
+	switch o := strings.ToLower(q.Get("order")); o {
+	case "asc", "desc":
+		p.Order = o
+	}
+	return p
+}
+
+// upstreamError logs the real error (the ebookdb transport error wraps a
+// *url.Error containing the internal upstream base URL) and returns a generic
+// 502 to the client.
+func upstreamError(w http.ResponseWriter, r *http.Request, err error) {
+	slog.Error("bookwarehouse upstream error",
+		"method", r.Method, "path", r.URL.Path, "err", err)
+	http.Error(w, "upstream unavailable", http.StatusBadGateway)
+}
 
 // syntheticLibraryID is the single library this backend advertises. Book
 // Warehouse is one external Calibre catalog with no native library concept,
@@ -58,20 +108,11 @@ func (h *Handler) List() http.HandlerFunc {
 				return
 			}
 		}
-		p := bookwarehouse.ListParams{
-			Cursor: r.URL.Query().Get("cursor"),
-			Sort:   r.URL.Query().Get("sort"),
-			Order:  r.URL.Query().Get("order"),
-			Author: r.URL.Query().Get("author"),
-			Series: r.URL.Query().Get("series"),
-			Genre:  r.URL.Query().Get("genre"),
-			Tag:    r.URL.Query().Get("tag"),
-		}
-		if l := r.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil {
-				p.Limit = n
-			}
-		}
+		p := parseListParams(r)
+		p.Author = r.URL.Query().Get("author")
+		p.Series = r.URL.Query().Get("series")
+		p.Genre = r.URL.Query().Get("genre")
+		p.Tag = r.URL.Query().Get("tag")
 		// Use the dedup wrapper so visual duplicates (multiple editions
 		// of the same book stored as separate upstream rows) don't show
 		// twice in a single page, and so the client's infinite-scroll
@@ -79,7 +120,7 @@ func (h *Handler) List() http.HandlerFunc {
 		// keep it firing forever).
 		out, err := h.client.ListBooksDeduped(r.Context(), p, 5)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		writeEnvelope(w, out)
@@ -105,23 +146,14 @@ func (h *Handler) Libraries() http.HandlerFunc {
 
 func (h *Handler) Search() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p := bookwarehouse.ListParams{
-			Query:  r.URL.Query().Get("q"),
-			Cursor: r.URL.Query().Get("cursor"),
-			Sort:   r.URL.Query().Get("sort"),
-			Order:  r.URL.Query().Get("order"),
-		}
-		if l := r.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil {
-				p.Limit = n
-			}
-		}
+		p := parseListParams(r)
+		p.Query = r.URL.Query().Get("q")
 		// Same dedup safety brake as List so search infinite-scroll doesn't
 		// loop on an all-duplicate page and pagination params are honored
 		// (previously only ?q= was forwarded, pinning results to page 1).
 		out, err := h.client.ListBooksDeduped(r.Context(), p, 5)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		writeEnvelope(w, out)
@@ -137,7 +169,7 @@ func (h *Handler) Detail() http.HandlerFunc {
 		}
 		d, err := h.client.GetBook(r.Context(), id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -177,15 +209,10 @@ func (h *Handler) BrowseSeries() http.HandlerFunc {
 func (h *Handler) BrowseGenres() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cursor := r.URL.Query().Get("cursor")
-		limit := 50
-		if l := r.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil {
-				limit = n
-			}
-		}
+		limit := clampLimit(r, 50)
 		out, err := h.client.ListGenres(r.Context(), cursor, limit)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		// Remap id→slug so the returned id is the value the /catalog?genre=
@@ -210,15 +237,10 @@ func (h *Handler) BrowseTags() http.HandlerFunc {
 func browseHandler(fetch func(context.Context, string, int) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cursor := r.URL.Query().Get("cursor")
-		limit := 50
-		if l := r.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil {
-				limit = n
-			}
-		}
+		limit := clampLimit(r, 50)
 		out, err := fetch(r.Context(), cursor, limit)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -239,7 +261,7 @@ func (h *Handler) Cover() http.HandlerFunc {
 		}
 		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+url.PathEscape(bookID)+"/cover/"+url.PathEscape(upstreamSize))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		defer resp.Body.Close()
@@ -265,7 +287,7 @@ func (h *Handler) File() http.HandlerFunc {
 		// advertise Accept-Ranges below.
 		resp, err := h.client.GetStreamWithRange(r.Context(), "/api/v1/books/"+url.PathEscape(bookID)+"/download", r.Header.Get("Range"))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		defer resp.Body.Close()
@@ -286,15 +308,10 @@ func (h *Handler) ExternalSearch() http.HandlerFunc {
 			http.Error(w, "q required", http.StatusBadRequest)
 			return
 		}
-		limit := 0
-		if l := r.URL.Query().Get("limit"); l != "" {
-			if n, err := strconv.Atoi(l); err == nil {
-				limit = n
-			}
-		}
+		limit := clampLimit(r, 0)
 		hits, err := h.client.ExternalSearch(r.Context(), q, limit)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -311,7 +328,7 @@ func (h *Handler) RequestSnapshot() http.HandlerFunc {
 		}
 		snap, err := h.client.GetMonitoring(r.Context(), eid)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			upstreamError(w, r, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

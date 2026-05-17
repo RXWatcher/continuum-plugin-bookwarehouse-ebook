@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 )
+
+// syntheticLibraryID is the single library this backend advertises. Book
+// Warehouse is one external Calibre catalog with no native library concept,
+// so it presents exactly one logical library to the portal. The portal maps
+// this id to its provisioned row and echoes it back as ?library_id=.
+const syntheticLibraryID int64 = 1
 
 type Handler struct {
 	client *bookwarehouse.Client
@@ -22,6 +29,7 @@ func NewHandler(c *bookwarehouse.Client) *Handler { return &Handler{client: c} }
 // onto the given chi.Router under /api/v1.
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/catalog", h.List())
+	r.Get("/catalog/libraries", h.Libraries())
 	r.Get("/catalog/search", h.Search())
 	r.Get("/catalog/{id}", h.Detail())
 	r.Get("/browse/authors", h.BrowseAuthors())
@@ -40,6 +48,16 @@ func (h *Handler) Mount(r chi.Router) {
 // for how this surface remaps id→slug for downstream consumers.
 func (h *Handler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// The portal echoes the provisioned library's id back as library_id.
+		// We own exactly one library; a request scoped to a different library
+		// is not ours — return an empty page (200) and never call upstream,
+		// so this catalog's books can't surface under a foreign library id.
+		if v := r.URL.Query().Get("library_id"); v != "" {
+			if id, err := strconv.ParseInt(v, 10, 64); err == nil && id != syntheticLibraryID {
+				writeEnvelope(w, bookwarehouse.Paged[bookwarehouse.Book]{})
+				return
+			}
+		}
 		p := bookwarehouse.ListParams{
 			Cursor: r.URL.Query().Get("cursor"),
 			Sort:   r.URL.Query().Get("sort"),
@@ -65,6 +83,23 @@ func (h *Handler) List() http.HandlerFunc {
 			return
 		}
 		writeEnvelope(w, out)
+	}
+}
+
+// Libraries handles GET /api/v1/catalog/libraries. The portal's ebook backend
+// contract expects {"items":[LibraryInfo...]}; this backend advertises one
+// synthetic library so the portal can provision and scope to it.
+func (h *Handler) Libraries() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{
+				"id":         syntheticLibraryID,
+				"name":       "Book Warehouse",
+				"media_type": "book",
+				"enabled":    true,
+			}},
+		})
 	}
 }
 
@@ -189,7 +224,7 @@ func (h *Handler) Cover() http.HandlerFunc {
 		if upstreamSize == "large" {
 			upstreamSize = "original"
 		}
-		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+bookID+"/cover/"+upstreamSize)
+		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+url.PathEscape(bookID)+"/cover/"+url.PathEscape(upstreamSize))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
@@ -212,7 +247,7 @@ func (h *Handler) File() http.HandlerFunc {
 		// the single stored file (`format` is informational — upstream chose
 		// the file_format at ingest). API key auth required, so we stream-
 		// proxy rather than 302.
-		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+bookID+"/download")
+		resp, err := h.client.GetStream(r.Context(), "/api/v1/books/"+url.PathEscape(bookID)+"/download")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return

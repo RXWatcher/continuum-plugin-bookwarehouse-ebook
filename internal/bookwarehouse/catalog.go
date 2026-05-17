@@ -94,7 +94,13 @@ func dedupKey(b Book) string {
 	if len(b.Authors) > 0 {
 		a = normalizeKey(b.Authors[0])
 	}
-	return "ta:" + t + "|" + a
+	// Include series + index: separate volumes of a series share the same
+	// title and author but are distinct works and must NOT collapse into a
+	// single card (otherwise readers can never reach later volumes). True
+	// duplicate editions of one volume still share all four fields (they
+	// differ only by ISBN/format, which the key ignores) and still merge.
+	return "ta:" + t + "|" + a + "|" + normalizeKey(b.Series) + "|" +
+		strconv.FormatFloat(b.SeriesIndex, 'f', -1, 64)
 }
 
 func normalizeKey(s string) string {

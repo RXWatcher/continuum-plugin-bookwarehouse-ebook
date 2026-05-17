@@ -209,3 +209,51 @@ func TestClient_GetMonitoring(t *testing.T) {
 		t.Errorf("got %+v", resp)
 	}
 }
+
+// externalID reaches GetMonitoring from a URL param and from the DB. A value
+// with path/query metacharacters must be percent-escaped so it can't redirect
+// the upstream request (SSRF / path traversal).
+func TestClient_GetMonitoring_EscapesID(t *testing.T) {
+	var gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"id":"x","status":"queued"}`))
+	}))
+	defer srv.Close()
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	if _, err := c.GetMonitoring(context.Background(), "a?b"); err != nil {
+		t.Fatalf("GetMonitoring: %v", err)
+	}
+	if gotPath != "/api/v1/monitoring/a?b" || gotQuery != "" {
+		t.Errorf("upstream path=%q query=%q (externalID not escaped)", gotPath, gotQuery)
+	}
+}
+
+// dedupKey must not collapse distinct works. Different volumes of a series
+// share title+author but differ by series_index; they are separate books and
+// must both appear, otherwise readers can never reach later volumes.
+func TestListBooksDeduped_KeepsDistinctSeriesVolumes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"books":[
+			{"id":"v1","title":"The Expanse","authors":[{"name":"James S. A. Corey"}],"series":"The Expanse","series_index":1},
+			{"id":"v2","title":"The Expanse","authors":[{"name":"James S. A. Corey"}],"series":"The Expanse","series_index":2},
+			{"id":"v2dup","title":"The Expanse","authors":[{"name":"James S. A. Corey"}],"series":"The Expanse","series_index":2}
+		],"pagination":{"page":1,"limit":50,"total_items":3,"total_pages":1}}`))
+	}))
+	defer srv.Close()
+	c := bookwarehouse.NewClient(srv.URL, "k")
+	out, err := c.ListBooksDeduped(context.Background(), bookwarehouse.ListParams{Limit: 50}, 3)
+	if err != nil {
+		t.Fatalf("ListBooksDeduped: %v", err)
+	}
+	// v1 and v2 are distinct volumes (kept); v2dup is a true duplicate of v2
+	// (same title+author+series+index) and must collapse.
+	if len(out.Items) != 2 {
+		t.Fatalf("want 2 distinct volumes, got %d: %+v", len(out.Items), out.Items)
+	}
+	ids := map[string]bool{out.Items[0].ID: true, out.Items[1].ID: true}
+	if !ids["v1"] || !(ids["v2"] || ids["v2dup"]) {
+		t.Errorf("expected volume 1 and volume 2 present; got %+v", out.Items)
+	}
+}

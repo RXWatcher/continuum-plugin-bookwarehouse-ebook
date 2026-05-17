@@ -246,3 +246,104 @@ func TestRequestSnapshot_Returns200(t *testing.T) {
 		t.Errorf("status = %v", body["status"])
 	}
 }
+
+// The portal's EbookBackend.ListLibraries GETs /api/v1/catalog/libraries and
+// expects {"items":[LibraryInfo...]}. Book Warehouse is one external Calibre
+// catalog, so it advertises exactly one synthetic library; without this route
+// portal libsync errors and the backend can never be provisioned.
+func TestLibraries_ReturnsSyntheticLibrary(t *testing.T) {
+	up := upstream(t)
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/catalog/libraries", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("code = %d body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Items []struct {
+			ID        int64  `json:"id"`
+			Name      string `json:"name"`
+			MediaType string `json:"media_type"`
+			Enabled   bool   `json:"enabled"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(env.Items) != 1 {
+		t.Fatalf("items = %+v", env.Items)
+	}
+	it := env.Items[0]
+	if it.ID != 1 || it.Name == "" || it.MediaType != "book" || !it.Enabled {
+		t.Errorf("synthetic library = %+v", it)
+	}
+}
+
+// /catalog?library_id=1 is the synthetic library: serve normally.
+func TestList_SyntheticLibraryIDServes(t *testing.T) {
+	up := upstream(t)
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/catalog?library_id=1&limit=10", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("code = %d body=%s", w.Code, w.Body.String())
+	}
+	var env catalog.PageEnvelope[catalog.EbookSummary]
+	_ = json.Unmarshal(w.Body.Bytes(), &env)
+	if len(env.Items) != 1 || env.Items[0].ID != "a" {
+		t.Errorf("env = %+v", env)
+	}
+}
+
+// /catalog?library_id=<not 1> asks for a library this backend does not own:
+// return an empty page (200) without ever calling upstream — never leak this
+// catalog's books under a foreign library id.
+func TestList_ForeignLibraryIDReturnsEmpty(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("upstream must not be called for a foreign library_id; got %s", r.URL.Path)
+		w.WriteHeader(404)
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	req := httptest.NewRequest("GET", "/catalog?library_id=99", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("code = %d body=%s", w.Code, w.Body.String())
+	}
+	var env catalog.PageEnvelope[catalog.EbookSummary]
+	_ = json.Unmarshal(w.Body.Bytes(), &env)
+	if len(env.Items) != 0 {
+		t.Errorf("foreign library_id must yield no items; got %+v", env.Items)
+	}
+}
+
+// book_id flows from the URL into the upstream request path. A value with
+// path/query metacharacters must be percent-escaped so it can't redirect the
+// upstream call (SSRF / path traversal).
+func TestCover_EscapesBookID(t *testing.T) {
+	var gotPath, gotQuery string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("cover"))
+	}))
+	defer up.Close()
+	c := bookwarehouse.NewClient(up.URL, "k")
+	r := newRouter(c)
+	// chi decodes %3F -> "a?z"; unescaped that would split off a query string.
+	req := httptest.NewRequest("GET", "/cover/a%3Fz/large", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if gotPath != "/api/v1/books/a?z/cover/original" || gotQuery != "" {
+		t.Errorf("upstream path=%q query=%q (book_id not escaped)", gotPath, gotQuery)
+	}
+}

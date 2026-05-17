@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 )
 
 // MonitoringRequest is the payload BookWarehouse expects for adding a book to
@@ -40,7 +41,7 @@ func (c *Client) AddMonitoring(ctx context.Context, r MonitoringRequest) (Monito
 }
 
 func (c *Client) GetMonitoring(ctx context.Context, externalID string) (MonitoringResponse, error) {
-	respBody, err := c.Get(ctx, "/api/v1/monitoring/"+externalID)
+	respBody, err := c.Get(ctx, "/api/v1/monitoring/"+url.PathEscape(externalID))
 	if err != nil {
 		return MonitoringResponse{}, err
 	}

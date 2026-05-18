@@ -49,6 +49,8 @@ func chiPathValueShim(next http.Handler) http.Handler {
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
+	r.Get("/admin", s.handleAdminHome)
+	r.Get("/admin/", s.handleAdminHome)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", s.handleHealth)
 		r.Get("/capabilities", s.handleCapabilities)
@@ -62,6 +64,21 @@ func (s *Server) Handler() http.Handler {
 		}
 	})
 	return r
+}
+
+func (s *Server) handleAdminHome(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BookWarehouse Ebook</title></head>
+<body style="font-family:system-ui,sans-serif;margin:32px;line-height:1.5;background:#111;color:#eee">
+<h1>BookWarehouse Ebook</h1>
+<p>Calibre-backed ebook catalog, streaming, and request provider.</p>
+<ul>
+<li><a style="color:#8ab4f8" href="./api/v1/admin/diagnostics">Diagnostics</a></li>
+<li><a style="color:#8ab4f8" href="./api/v1/admin/test-search">Test search</a></li>
+</ul>
+</body></html>`))
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {

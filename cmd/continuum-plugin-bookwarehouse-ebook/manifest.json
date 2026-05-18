@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "checksum": "d8e71551f53052df4203708ae2ee6d6c89fb68b2ab5d80d85c04143e9c28fa1d",
   "continuum_api_version": "v1",
+  "supported_platforms": [
+    {
+      "os": "linux",
+      "arch": "amd64"
+    }
+  ],
   "capabilities": [
     {
       "type": "http_routes.v1",

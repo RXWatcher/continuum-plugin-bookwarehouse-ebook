@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/server"
@@ -21,6 +22,25 @@ func TestHealthOK(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
 	if body["ok"] != true {
 		t.Errorf("ok = %v", body["ok"])
+	}
+}
+
+func TestAdminPageIncludesRequestTriageGuidance(t *testing.T) {
+	h := server.New(server.Deps{})
+	r := httptest.NewRequest("GET", "/admin?theme=midnight-cinema", nil)
+	w := httptest.NewRecorder()
+	h.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{"Request triage", "Upstream conflicts", "Reconcile stuck requests", "Auto monitoring"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("admin page missing %q", want)
+		}
+	}
+	if !strings.Contains(body, `data-theme="midnight-cinema"`) {
+		t.Fatalf("admin page should preserve theme")
 	}
 }
 

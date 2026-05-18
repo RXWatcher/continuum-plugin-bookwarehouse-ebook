@@ -5,6 +5,7 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	pluginv1 "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginproto/continuum/plugin/v1"
@@ -40,6 +41,9 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 	if req.GetPayload() == nil {
 		return &pluginv1.HandleEventResponse{}, nil
 	}
+	if h.depsFn == nil {
+		return nil, fmt.Errorf("plugin not configured yet")
+	}
 	d := h.depsFn()
 	if d == nil {
 		// Capability servers serve before Configure runs. Nack so the host
@@ -47,8 +51,12 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 		// request permanently.
 		return nil, fmt.Errorf("plugin not configured yet")
 	}
+	if d.Store == nil || d.BW == nil {
+		return nil, fmt.Errorf("plugin dependencies not configured")
+	}
 	p := req.GetPayload().AsMap()
-	if target := targetPluginIDFromPayload(p); target != d.PluginID {
+	target, targeted := targetPluginIDFromPayload(p)
+	if !targeted || target != d.PluginID {
 		return &pluginv1.HandleEventResponse{}, nil
 	}
 	requestID := requestIDFromPayload(p)
@@ -89,7 +97,7 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 			// rather than lost.
 			return nil, fmt.Errorf("persist failed %s: %w", requestID, perr)
 		}
-		d.Pub.Publish(ctx, "request_failed", map[string]any{
+		publish(ctx, d.Pub, "request_failed", map[string]any{
 			"request_id":         requestID,
 			"requestId":          requestID,
 			"provider_plugin_id": d.PluginID,
@@ -108,7 +116,7 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 	}); err != nil {
 		return nil, fmt.Errorf("persist acknowledged %s: %w", requestID, err)
 	}
-	d.Pub.Publish(ctx, "request_acknowledged", map[string]any{
+	publish(ctx, d.Pub, "request_acknowledged", map[string]any{
 		"request_id":         requestID,
 		"requestId":          requestID,
 		"external_id":        resp.ID,
@@ -117,13 +125,32 @@ func (h *Handler) HandleEvent(ctx context.Context, req *pluginv1.HandleEventRequ
 	return &pluginv1.HandleEventResponse{}, nil
 }
 
-func targetPluginIDFromPayload(m map[string]any) string {
+func publish(ctx context.Context, pub Publisher, name string, payload map[string]any) {
+	if pub == nil {
+		return
+	}
+	pub.Publish(ctx, name, payload)
+}
+
+func targetPluginIDFromPayload(m map[string]any) (string, bool) {
 	for _, key := range []string{"target_plugin_id", "target_provider_plugin_id", "provider_plugin_id"} {
-		if v, _ := m[key].(string); v != "" {
-			return v
+		if target, ok := trimmedStringValue(m, key); ok {
+			return target, true
 		}
 	}
-	return ""
+	return "", false
+}
+
+func trimmedStringValue(m map[string]any, key string) (string, bool) {
+	v, ok := m[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", true
+	}
+	return strings.TrimSpace(s), true
 }
 
 func requestIDFromPayload(m map[string]any) string {

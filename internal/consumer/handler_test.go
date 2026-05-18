@@ -76,6 +76,35 @@ func TestConsumer_SkipsWhenTargetMismatch(t *testing.T) {
 	}
 }
 
+func TestConsumer_SkipsMalformedOrConflictingTargets(t *testing.T) {
+	for _, payload := range []map[string]any{
+		{"request_id": "r-blank", "target_plugin_id": " ", "title": "X"},
+		{"request_id": "r-numeric", "target_plugin_id": float64(1), "title": "X"},
+		{
+			"request_id":                "r-conflict",
+			"target_plugin_id":          "continuum.something-else",
+			"target_provider_plugin_id": "continuum.bookwarehouse-ebook",
+			"title":                     "X",
+		},
+	} {
+		up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Errorf("upstream should not be called for payload %+v", payload)
+		}))
+		h, pub, _ := newConsumerForTest(t, up)
+		_, err := h.HandleEvent(context.Background(), &pluginv1.HandleEventRequest{
+			EventName: "plugin.continuum.ebooks.request_submitted",
+			Payload:   mustStruct(t, payload),
+		})
+		up.Close()
+		if err != nil {
+			t.Fatalf("HandleEvent: %v", err)
+		}
+		if len(pub.pubs) != 0 {
+			t.Fatalf("publisher should not be called for %+v; got %+v", payload, pub.pubs)
+		}
+	}
+}
+
 func TestConsumer_HappyPath_EmitsAcknowledged(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"id":"mon-77","status":"queued"}`))
@@ -106,6 +135,32 @@ func TestConsumer_HappyPath_EmitsAcknowledged(t *testing.T) {
 	row, _ := st.GetForwardedRequest(context.Background(), "r-1")
 	if row.Status != "acknowledged" || row.ExternalID != "mon-77" || !row.AutoMonitor {
 		t.Errorf("row = %+v", row)
+	}
+}
+
+func TestConsumer_NilPublisherDoesNotPanic(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"mon-77","status":"queued"}`))
+	}))
+	defer up.Close()
+	st := newTestStore(t)
+	deps := &consumer.Deps{
+		Store:    st,
+		Pub:      nil,
+		BW:       bookwarehouse.NewClient(up.URL, "k"),
+		PluginID: "continuum.bookwarehouse-ebook",
+	}
+	h := consumer.New(func() *consumer.Deps { return deps })
+	_, err := h.HandleEvent(context.Background(), &pluginv1.HandleEventRequest{
+		EventName: "plugin.continuum.ebooks.request_submitted",
+		Payload: mustStruct(t, map[string]any{
+			"request_id":       "r-nil-pub",
+			"target_plugin_id": "continuum.bookwarehouse-ebook",
+			"title":            "X",
+		}),
+	})
+	if err != nil {
+		t.Fatalf("HandleEvent: %v", err)
 	}
 }
 
@@ -151,6 +206,21 @@ func TestConsumer_NotConfigured_Nacks(t *testing.T) {
 	}
 	if resp != nil {
 		t.Errorf("response must be nil on nack; got %+v", resp)
+	}
+}
+
+func TestConsumer_NilDepsFn_Nacks(t *testing.T) {
+	h := consumer.New(nil)
+	_, err := h.HandleEvent(context.Background(), &pluginv1.HandleEventRequest{
+		EventName: "plugin.continuum.ebooks.request_submitted",
+		Payload: mustStruct(t, map[string]any{
+			"request_id":       "r-cfg",
+			"target_plugin_id": "continuum.bookwarehouse-ebook",
+			"title":            "X",
+		}),
+	})
+	if err == nil {
+		t.Fatal("nil depsFn must nack so the host redelivers")
 	}
 }
 

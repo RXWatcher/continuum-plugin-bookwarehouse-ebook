@@ -76,6 +76,13 @@ func main() {
 			return fmt.Errorf("migrate: %w", err)
 		}
 		st := store.New(p)
+		appCfg, err := st.ImportLegacyAppConfig(ctx, cfg)
+		if err != nil {
+			p.Close()
+			return fmt.Errorf("import app config: %w", err)
+		}
+		appCfg.DatabaseURL = cfg.DatabaseURL
+		cfg = appCfg
 		bwClient := bookwarehouse.NewClient(cfg.BaseURL, cfg.APIKey)
 		bwClient.SetDefaultCoverSize(cfg.DefaultCoverSize)
 

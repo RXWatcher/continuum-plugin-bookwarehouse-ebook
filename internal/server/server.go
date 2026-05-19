@@ -56,6 +56,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/health", s.handleHealth)
 		r.Get("/capabilities", s.handleCapabilities)
 		r.Get("/admin/diagnostics", s.handleDiagnostics)
+		r.Get("/admin/config", s.handleGetConfig)
+		r.Patch("/admin/config", s.handleUpdateConfig)
 		r.Get("/admin/test-search", s.handleTestSearch)
 		if s.deps.BookwarehouseClient != nil {
 			ch := catalog.NewHandler(s.deps.BookwarehouseClient)
@@ -65,6 +67,45 @@ func (s *Server) Handler() http.Handler {
 		}
 	})
 	return r
+}
+
+func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "store not configured"})
+		return
+	}
+	cfg, err := s.deps.Store.GetAppConfig(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	cfg.APIKey = ""
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "store not configured"})
+		return
+	}
+	cur, err := s.deps.Store.GetAppConfig(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	var next runtime.Config
+	if err := json.NewDecoder(r.Body).Decode(&next); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid JSON body"})
+		return
+	}
+	if next.APIKey == "" {
+		next.APIKey = cur.APIKey
+	}
+	if err := s.deps.Store.UpdateAppConfig(r.Context(), next); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {

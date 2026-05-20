@@ -23,8 +23,8 @@ func upstream(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(`{"books":[{"id":"b","title":"B","file_format":"pdf"}],"pagination":{"page":1,"total_items":1,"total_pages":1}}`))
 		case "/api/v1/books/a":
 			_, _ = w.Write([]byte(`{"id":"a","title":"A","file_format":"epub","file_size":1024}`))
-		case "/api/v1/external_search":
-			_, _ = w.Write([]byte(`{"items":[{"source_id":"ol-1","source":"openlibrary","title":"X"}]}`))
+		case "/api/v1/search/external":
+			_, _ = w.Write([]byte(`{"results":[{"source":"openlibrary","title":"X","authors":["A Writer"],"published_date":"1999","cover_url":"https://covers.example/x.jpg"}],"total":1,"limit":20,"offset":0}`))
 		case "/api/v1/monitoring/mon-99":
 			_, _ = w.Write([]byte(`{"id":"mon-99","status":"downloading"}`))
 		default:

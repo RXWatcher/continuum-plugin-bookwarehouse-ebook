@@ -17,16 +17,20 @@ import (
 
 // Config is the parsed plugin global config.
 type Config struct {
-	DatabaseURL           string
-	BaseURL               string
-	APIKey                string
-	DefaultCoverSize      string
-	RequestQualityProfile string
-	EnableAutoMonitoring  bool
+	DatabaseURL           string `json:"database_url,omitempty"`
+	BaseURL               string `json:"base_url"`
+	APIKey                string `json:"api_key,omitempty"`
+	DefaultCoverSize      string `json:"default_cover_size"`
+	RequestQualityProfile string `json:"request_quality_profile,omitempty"`
+	EnableAutoMonitoring  bool   `json:"enable_auto_monitoring"`
 }
 
 func (c Config) Configured() bool {
-	return c.BaseURL != "" && c.APIKey != "" && c.DatabaseURL != ""
+	return c.DatabaseURL != ""
+}
+
+func (c Config) ProviderConfigured() bool {
+	return c.BaseURL != "" && c.APIKey != ""
 }
 
 func mask(s string) string {
@@ -101,14 +105,10 @@ func (s *Server) Configure(_ context.Context, req *pluginv1.ConfigureRequest) (*
 		s.mu.Unlock()
 		return &pluginv1.ConfigureResponse{}, nil
 	}
-	if !cfg.Configured() {
-		s.mu.Lock()
-		s.cfg = cfg
-		s.mu.Unlock()
-		return &pluginv1.ConfigureResponse{}, nil
-	}
-	if u, err := url.Parse(cfg.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, fmt.Errorf("base_url must be a valid http(s) URL")
+	if cfg.BaseURL != "" {
+		if u, err := url.Parse(cfg.BaseURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, fmt.Errorf("base_url must be a valid http(s) URL")
+		}
 	}
 	if s.onCfg != nil {
 		if err := s.onCfg(cfg); err != nil {

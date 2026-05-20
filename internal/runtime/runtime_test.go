@@ -3,6 +3,7 @@ package runtime
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"testing"
@@ -53,5 +54,34 @@ func TestConfigure_RejectsInvalidBaseURL(t *testing.T) {
 		"database_url": "postgres://x/y", "api_key": "k", "base_url": "https://ok.example",
 	})); err != nil {
 		t.Fatalf("valid base_url rejected: %v", err)
+	}
+}
+
+func TestConfigJSONSnakeCaseRoundTrip(t *testing.T) {
+	var cfg Config
+	raw := []byte(`{
+		"base_url": "https://bookwarehouse.zenterprise.org",
+		"api_key": "secret",
+		"default_cover_size": "thumbnail",
+		"request_quality_profile": "best",
+		"enable_auto_monitoring": true
+	}`)
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if cfg.BaseURL != "https://bookwarehouse.zenterprise.org" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.APIKey != "secret" {
+		t.Fatalf("APIKey = %q", cfg.APIKey)
+	}
+	if cfg.DefaultCoverSize != "thumbnail" {
+		t.Fatalf("DefaultCoverSize = %q", cfg.DefaultCoverSize)
+	}
+	if cfg.RequestQualityProfile != "best" {
+		t.Fatalf("RequestQualityProfile = %q", cfg.RequestQualityProfile)
+	}
+	if !cfg.EnableAutoMonitoring {
+		t.Fatal("EnableAutoMonitoring = false")
 	}
 }

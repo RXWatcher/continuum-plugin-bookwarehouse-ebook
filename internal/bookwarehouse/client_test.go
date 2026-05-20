@@ -119,10 +119,8 @@ func TestClient_ListBooks(t *testing.T) {
 	}
 }
 
-// default_cover_size is an operator config ("Defaults to large"). It was
-// parsed but never consumed and the default never applied — cover URLs were
-// hardcoded to "medium". The cover size in built URLs must follow config,
-// defaulting to "large", and reject junk back to "large".
+// default_cover_size is an operator config. The cover size in built URLs must
+// follow config, defaulting to "medium", and tolerate legacy aliases.
 func TestClient_CoverSize_FollowsConfig(t *testing.T) {
 	body := `{"books":[{"id":"bk1","title":"T","has_cover":true}],"pagination":{"page":1,"total_pages":1,"total_items":1}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,25 +128,32 @@ func TestClient_CoverSize_FollowsConfig(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Default (unset) -> "large" per the manifest-documented default.
+	// Default (unset) -> "medium".
 	c := bookwarehouse.NewClient(srv.URL, "k")
 	out, _ := c.ListBooks(context.Background(), bookwarehouse.ListParams{})
-	if out.Items[0].CoverURL != "/cover/bk1/large" {
-		t.Errorf("default cover url = %q, want /cover/bk1/large", out.Items[0].CoverURL)
+	if out.Items[0].CoverURL != "/cover/bk1/medium" {
+		t.Errorf("default cover url = %q, want /cover/bk1/medium", out.Items[0].CoverURL)
 	}
 
 	// Configured value is honored.
-	c.SetDefaultCoverSize("small")
+	c.SetDefaultCoverSize("thumbnail")
 	out, _ = c.ListBooks(context.Background(), bookwarehouse.ListParams{})
-	if out.Items[0].CoverURL != "/cover/bk1/small" {
-		t.Errorf("configured cover url = %q, want /cover/bk1/small", out.Items[0].CoverURL)
+	if out.Items[0].CoverURL != "/cover/bk1/thumbnail" {
+		t.Errorf("configured cover url = %q, want /cover/bk1/thumbnail", out.Items[0].CoverURL)
 	}
 
-	// Junk falls back to "large".
+	// Legacy aliases normalize.
+	c.SetDefaultCoverSize("large")
+	out, _ = c.ListBooks(context.Background(), bookwarehouse.ListParams{})
+	if out.Items[0].CoverURL != "/cover/bk1/original" {
+		t.Errorf("legacy large cover url = %q, want /cover/bk1/original", out.Items[0].CoverURL)
+	}
+
+	// Junk falls back to "medium".
 	c.SetDefaultCoverSize("ENORMOUS")
 	out, _ = c.ListBooks(context.Background(), bookwarehouse.ListParams{})
-	if out.Items[0].CoverURL != "/cover/bk1/large" {
-		t.Errorf("invalid cover size url = %q, want /cover/bk1/large", out.Items[0].CoverURL)
+	if out.Items[0].CoverURL != "/cover/bk1/medium" {
+		t.Errorf("invalid cover size url = %q, want /cover/bk1/medium", out.Items[0].CoverURL)
 	}
 }
 
@@ -221,17 +226,31 @@ func TestClient_ListAuthors(t *testing.T) {
 }
 
 func TestClient_ExternalSearch(t *testing.T) {
+	var gotPath, gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/external_search" {
-			t.Errorf("path = %s", r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"items":[{"source_id":"ol-1","source":"openlibrary","title":"X"}]}`))
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"results":[{"title":"Project Hail Mary","authors":["Andy Weir"],"published_date":"2021-05-04","language":"en","cover_url":"https://covers.example/phm.jpg","source":"openlibrary"}],"total":1,"limit":5,"offset":0}`))
 	}))
 	defer srv.Close()
 	c := bookwarehouse.NewClient(srv.URL, "k")
-	hits, _ := c.ExternalSearch(context.Background(), "weir", 0)
-	if len(hits) != 1 || hits[0].SourceID != "ol-1" {
-		t.Errorf("hits = %+v", hits)
+	hits, err := c.ExternalSearch(context.Background(), "hail", 5)
+	if err != nil {
+		t.Fatalf("ExternalSearch: %v", err)
+	}
+	if gotPath != "/api/v1/search/external" {
+		t.Fatalf("path = %q, want /api/v1/search/external", gotPath)
+	}
+	for _, want := range []string{"q=hail", "limit=5"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Fatalf("query = %q, missing %q", gotQuery, want)
+		}
+	}
+	if len(hits) != 1 {
+		t.Fatalf("hits = %+v", hits)
+	}
+	if hits[0].Title != "Project Hail Mary" || hits[0].Year != 2021 || hits[0].Language != "en" || hits[0].CoverURL == "" {
+		t.Errorf("hit = %+v", hits[0])
 	}
 }
 

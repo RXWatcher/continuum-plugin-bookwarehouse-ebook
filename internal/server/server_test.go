@@ -59,8 +59,8 @@ func TestAdminPageIncludesOperatorConsoleSections(t *testing.T) {
 		`data-tab-target="request-preview"`,
 		`data-tab-target="reconcile"`,
 		`id="request-preview-form"`,
-		`Expected upstream payload`,
-		`Non-terminal request states`,
+		`Expected payload`,
+		`Total requests`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin page missing %q", want)

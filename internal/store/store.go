@@ -22,7 +22,10 @@ func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
 func DefaultAppConfig() pluginrt.Config {
-	return pluginrt.Config{DefaultCoverSize: "large"}
+	return pluginrt.Config{
+		BaseURL:          "https://bookwarehouse.zenterprise.org",
+		DefaultCoverSize: "medium",
+	}
 }
 
 func (s *Store) GetAppConfig(ctx context.Context) (pluginrt.Config, error) {
@@ -44,7 +47,7 @@ func (s *Store) GetAppConfig(ctx context.Context) (pluginrt.Config, error) {
 		}
 	}
 	if cfg.DefaultCoverSize == "" {
-		cfg.DefaultCoverSize = "large"
+		cfg.DefaultCoverSize = "medium"
 	}
 	return cfg, nil
 }
@@ -52,7 +55,7 @@ func (s *Store) GetAppConfig(ctx context.Context) (pluginrt.Config, error) {
 func (s *Store) UpdateAppConfig(ctx context.Context, cfg pluginrt.Config) error {
 	cfg.DatabaseURL = ""
 	if cfg.DefaultCoverSize == "" {
-		cfg.DefaultCoverSize = "large"
+		cfg.DefaultCoverSize = "medium"
 	}
 	raw, err := json.Marshal(cfg)
 	if err != nil {
@@ -77,8 +80,11 @@ func (s *Store) ImportLegacyAppConfig(ctx context.Context, legacy pluginrt.Confi
 		return current, nil
 	}
 	legacy.DatabaseURL = ""
+	if legacy.BaseURL == "" {
+		legacy.BaseURL = current.BaseURL
+	}
 	if legacy.DefaultCoverSize == "" {
-		legacy.DefaultCoverSize = "large"
+		legacy.DefaultCoverSize = current.DefaultCoverSize
 	}
 	if reflect.DeepEqual(legacy, current) {
 		return current, nil

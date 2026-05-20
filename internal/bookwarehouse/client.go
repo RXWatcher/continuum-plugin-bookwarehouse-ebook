@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -32,20 +33,25 @@ func truncForError(b []byte) string {
 	return string(b[:errBodySnippet]) + "…(truncated)"
 }
 
-// defaultCoverSizeFallback is the manifest-documented default for the
-// default_cover_size config key ("Defaults to large").
-const defaultCoverSizeFallback = "large"
+// defaultCoverSizeFallback is the default used when the operator has not
+// selected a size or an invalid value is stored.
+const defaultCoverSizeFallback = "medium"
 
 func normalizeCoverSize(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "small", "medium", "large", "original":
+	case "thumbnail", "medium", "original":
 		return strings.ToLower(strings.TrimSpace(s))
+	case "small":
+		return "thumbnail"
+	case "large":
+		return "original"
 	default:
 		return defaultCoverSizeFallback
 	}
 }
 
 type Client struct {
+	mu      sync.RWMutex
 	baseURL string
 	apiKey  string
 	hc      *http.Client
@@ -88,10 +94,29 @@ func (c *Client) SetDefaultCoverSize(size string) {
 	c.defaultCoverSize.Store(&v)
 }
 
+// Reconfigure updates the upstream base URL and API key in place so callers
+// sharing this client pick up admin config saves without restarting the plugin.
+func (c *Client) Reconfigure(baseURL, apiKey string) {
+	c.mu.Lock()
+	c.baseURL = strings.TrimRight(baseURL, "/")
+	c.apiKey = apiKey
+	c.mu.Unlock()
+}
+
 // coverSize returns the configured default cover size.
 func (c *Client) coverSize() string { return *c.defaultCoverSize.Load() }
 
-func (c *Client) BaseURL() string { return c.baseURL }
+func (c *Client) BaseURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL
+}
+
+func (c *Client) configSnapshot() (string, string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL, c.apiKey
+}
 
 func (c *Client) Ping(ctx context.Context) error {
 	_, err := c.Get(ctx, "/api/v1/health")
@@ -103,11 +128,12 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
+	baseURL, apiKey := c.configSnapshot()
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -137,11 +163,12 @@ func (c *Client) GetStream(ctx context.Context, path string) (*http.Response, er
 // resp.Body. A 416 (range not satisfiable) is returned to the caller as a
 // normal response, not an error, so it can be relayed verbatim.
 func (c *Client) GetStreamWithRange(ctx context.Context, path, rangeHeader string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
+	baseURL, apiKey := c.configSnapshot()
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("X-API-Key", apiKey)
 	if rangeHeader != "" {
 		req.Header.Set("Range", rangeHeader)
 	}
@@ -157,11 +184,12 @@ func (c *Client) GetStreamWithRange(ctx context.Context, path, rangeHeader strin
 }
 
 func (c *Client) PostJSON(ctx context.Context, path string, body []byte) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+path, strings.NewReader(string(body)))
+	baseURL, apiKey := c.configSnapshot()
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+path, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.hc.Do(req)

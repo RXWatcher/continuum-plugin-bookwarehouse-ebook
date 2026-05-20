@@ -343,10 +343,10 @@ func (c *Client) GetBook(ctx context.Context, id string) (BookDetail, error) {
 
 // FileURL returns the upstream URL for fetching a specific format of a book.
 func (c *Client) FileURL(bookID, format string) string {
-	return fmt.Sprintf("%s/api/v1/books/%s/files/%s", c.baseURL, url.PathEscape(bookID), url.PathEscape(format))
+	return fmt.Sprintf("%s/api/v1/books/%s/files/%s", c.BaseURL(), url.PathEscape(bookID), url.PathEscape(format))
 }
 
 // CoverURL returns the deterministic upstream URL for a cover at a given size.
 func (c *Client) CoverURL(bookID, size string) string {
-	return fmt.Sprintf("%s/api/v1/books/%s/cover/%s", c.baseURL, url.PathEscape(bookID), url.PathEscape(size))
+	return fmt.Sprintf("%s/api/v1/books/%s/cover/%s", c.BaseURL(), url.PathEscape(bookID), url.PathEscape(size))
 }

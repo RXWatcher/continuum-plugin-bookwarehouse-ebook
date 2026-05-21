@@ -60,7 +60,7 @@ func TestConfigure_RejectsInvalidBaseURL(t *testing.T) {
 func TestConfigJSONSnakeCaseRoundTrip(t *testing.T) {
 	var cfg Config
 	raw := []byte(`{
-		"base_url": "https://bookwarehouse.zenterprise.org",
+		"base_url": "https://bookwarehouse.domain.com",
 		"api_key": "secret",
 		"default_cover_size": "thumbnail",
 		"request_quality_profile": "best",
@@ -69,7 +69,7 @@ func TestConfigJSONSnakeCaseRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	if cfg.BaseURL != "https://bookwarehouse.zenterprise.org" {
+	if cfg.BaseURL != "https://bookwarehouse.domain.com" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
 	if cfg.APIKey != "secret" {

@@ -23,7 +23,7 @@ func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
 func DefaultAppConfig() pluginrt.Config {
 	return pluginrt.Config{
-		BaseURL:          "https://bookwarehouse.zenterprise.org",
+		BaseURL:          "https://bookwarehouse.domain.com",
 		DefaultCoverSize: "medium",
 	}
 }

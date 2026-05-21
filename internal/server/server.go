@@ -12,11 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/catalog"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/request"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/runtime"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/store"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/catalog"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/request"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/runtime"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/store"
 )
 
 type Deps struct {

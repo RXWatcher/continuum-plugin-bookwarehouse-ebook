@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/request"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/request"
 )
 
 func TestSnapshot_ReturnsUpstreamStatus(t *testing.T) {

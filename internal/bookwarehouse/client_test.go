@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 )
 
 func TestClient_SendsAPIKeyHeader(t *testing.T) {

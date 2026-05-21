@@ -12,9 +12,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/catalog"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/tokens"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/catalog"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/tokens"
 )
 
 const testSecret = "test-secret-with-enough-entropy-32"

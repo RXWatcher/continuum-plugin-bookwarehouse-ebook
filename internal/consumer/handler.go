@@ -10,8 +10,8 @@ import (
 
 	pluginv1 "github.com/ContinuumApp/continuum-plugin-sdk/pkg/pluginproto/continuum/plugin/v1"
 
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/store"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/store"
 )
 
 // Publisher is the subset of internal/event.Publisher we need; defined as

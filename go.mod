@@ -1,4 +1,4 @@
-module github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook
+module github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook
 
 go 1.26.0
 

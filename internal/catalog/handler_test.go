@@ -4,14 +4,39 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/catalog"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/tokens"
 )
+
+const testSecret = "test-secret-with-enough-entropy-32"
+
+// signTestToken mints an HS256 token shaped like what the portal produces.
+// Returns the URL-encoded query value.
+func signTestToken(t *testing.T, bookID string, fileIdx int) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"aud":      tokens.Audience,
+		"sub":      "1",
+		"book_id":  bookID,
+		"file_idx": fileIdx,
+		"exp":      time.Now().Add(5 * time.Minute).Unix(),
+		"iat":      time.Now().Unix(),
+	})
+	s, err := tok.SignedString([]byte(testSecret))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return url.QueryEscape(s)
+}
 
 func upstream(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -35,7 +60,7 @@ func upstream(t *testing.T) *httptest.Server {
 
 func newRouter(c *bookwarehouse.Client) *chi.Mux {
 	r := chi.NewRouter()
-	h := catalog.NewHandler(c)
+	h := catalog.NewHandler(c, testSecret)
 	h.Mount(r)
 	return r
 }
@@ -210,7 +235,7 @@ func TestCover_StreamProxiesBytes(t *testing.T) {
 	defer up.Close()
 	c := bookwarehouse.NewClient(up.URL, "k")
 	r := newRouter(c)
-	req := httptest.NewRequest("GET", "/cover/bw-7/large", nil)
+	req := httptest.NewRequest("GET", "/cover/bw-7/large?token="+signTestToken(t, "bw-7", tokens.CoverFileIdx), nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -235,7 +260,7 @@ func TestFile_StreamProxiesBytes(t *testing.T) {
 	defer up.Close()
 	c := bookwarehouse.NewClient(up.URL, "k")
 	r := newRouter(c)
-	req := httptest.NewRequest("GET", "/file/bw-7?format=epub", nil)
+	req := httptest.NewRequest("GET", "/file/bw-7?format=epub&token="+signTestToken(t, "bw-7", tokens.FileFileIdx), nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -262,7 +287,7 @@ func TestFile_ForwardsRangeAndPartialContent(t *testing.T) {
 	defer up.Close()
 	c := bookwarehouse.NewClient(up.URL, "k")
 	r := newRouter(c)
-	req := httptest.NewRequest("GET", "/file/bw-7?format=epub", nil)
+	req := httptest.NewRequest("GET", "/file/bw-7?format=epub&token="+signTestToken(t, "bw-7", tokens.FileFileIdx), nil)
 	req.Header.Set("Range", "bytes=0-9")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -404,7 +429,7 @@ func TestCover_EscapesBookID(t *testing.T) {
 	c := bookwarehouse.NewClient(up.URL, "k")
 	r := newRouter(c)
 	// chi decodes %3F -> "a?z"; unescaped that would split off a query string.
-	req := httptest.NewRequest("GET", "/cover/a%3Fz/large", nil)
+	req := httptest.NewRequest("GET", "/cover/a%3Fz/large?token="+signTestToken(t, "a?z", tokens.CoverFileIdx), nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if gotPath != "/api/v1/books/a?z/cover/original" || gotQuery != "" {

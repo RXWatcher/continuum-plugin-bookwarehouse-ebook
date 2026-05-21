@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "checksum": "d8e71551f53052df4203708ae2ee6d6c89fb68b2ab5d80d85c04143e9c28fa1d",
   "continuum_api_version": "v1",
+  "category": "Books/Ebooks",
   "supported_platforms": [
     {
       "os": "linux",
@@ -49,6 +50,18 @@
     }
   ],
   "http_routes": [
+    {
+      "id": "file",
+      "method": "GET",
+      "path": "/api/v1/file/*",
+      "access": "public"
+    },
+    {
+      "id": "cover",
+      "method": "GET",
+      "path": "/api/v1/cover/*",
+      "access": "public"
+    },
     {
       "id": "api",
       "method": "*",

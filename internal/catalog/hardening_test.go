@@ -14,7 +14,7 @@ import (
 
 func mount(c *bookwarehouse.Client) http.Handler {
 	r := chi.NewRouter()
-	catalog.NewHandler(c).Mount(r)
+	catalog.NewHandler(c, "").Mount(r)
 	return r
 }
 

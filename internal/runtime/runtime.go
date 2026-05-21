@@ -23,6 +23,11 @@ type Config struct {
 	DefaultCoverSize      string `json:"default_cover_size"`
 	RequestQualityProfile string `json:"request_quality_profile,omitempty"`
 	EnableAutoMonitoring  bool   `json:"enable_auto_monitoring"`
+	// StreamSigningSecret is the HMAC key shared with the ebooks portal for
+	// verifying signed media URLs (?token=<HS256 JWT>). Must match the
+	// portal's media_signing_secret. Base64-encoded; verification falls
+	// back to treating the raw string as bytes if base64 decoding fails.
+	StreamSigningSecret string `json:"stream_signing_secret,omitempty"`
 }
 
 func (c Config) Configured() bool {
@@ -50,6 +55,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("default_cover_size", c.DefaultCoverSize),
 		slog.String("request_quality_profile", c.RequestQualityProfile),
 		slog.Bool("enable_auto_monitoring", c.EnableAutoMonitoring),
+		slog.String("stream_signing_secret", mask(c.StreamSigningSecret)),
 	)
 }
 
@@ -97,6 +103,8 @@ func (s *Server) Configure(_ context.Context, req *pluginv1.ConfigureRequest) (*
 			if b, ok := m["value"].(bool); ok {
 				cfg.EnableAutoMonitoring = b
 			}
+		case "stream_signing_secret":
+			cfg.StreamSigningSecret = stringFromValue(m["value"])
 		}
 	}
 	if cfg.DatabaseURL == "" {

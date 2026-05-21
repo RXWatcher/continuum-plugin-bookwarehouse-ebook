@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/ContinuumApp/continuum-plugin-bookwarehouse-ebook/internal/tokens"
 )
 
 // maxCatalogLimit caps the page size forwarded upstream. limit is
@@ -71,9 +73,15 @@ const syntheticLibraryID int64 = 1
 
 type Handler struct {
 	client *bookwarehouse.Client
+	secret string
 }
 
-func NewHandler(c *bookwarehouse.Client) *Handler { return &Handler{client: c} }
+// NewHandler constructs a Handler bound to a typed upstream client. secret
+// is the HMAC key shared with the ebooks portal — Cover() and File() each
+// require a valid signed ?token= matching the book id and file_idx.
+func NewHandler(c *bookwarehouse.Client, secret string) *Handler {
+	return &Handler{client: c, secret: secret}
+}
 
 // Mount installs all catalog/browse/cover/file/external_search/request routes
 // onto the given chi.Router under /api/v1.
@@ -252,6 +260,12 @@ func (h *Handler) Cover() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bookID := chi.URLParam(r, "book_id")
 		size := chi.URLParam(r, "size")
+		// Route is declared public on the host plugin proxy; this handler is
+		// the only auth gate. file_idx=-1 is the sentinel for cover tokens.
+		if _, err := tokens.Verify(h.secret, r.URL.Query().Get("token"), bookID, tokens.CoverFileIdx); err != nil {
+			writeTokenError(w, err)
+			return
+		}
 		// Stream-proxy upstream cover; redirecting won't work because the
 		// upstream cover endpoint requires X-API-Key auth that the browser
 		// won't send. Upstream maps `large` to `original`.
@@ -278,6 +292,12 @@ func (h *Handler) Cover() http.HandlerFunc {
 func (h *Handler) File() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bookID := chi.URLParam(r, "book_id")
+		// Route is declared public on the host plugin proxy; this handler is
+		// the only auth gate. Ebooks are single-file per book; file_idx=0.
+		if _, err := tokens.Verify(h.secret, r.URL.Query().Get("token"), bookID, tokens.FileFileIdx); err != nil {
+			writeTokenError(w, err)
+			return
+		}
 		// Upstream BookWarehouse: GET /api/v1/books/{id}/download → bytes of
 		// the single stored file (`format` is informational — upstream chose
 		// the file_format at ingest). API key auth required, so we stream-
@@ -299,6 +319,17 @@ func (h *Handler) File() http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}
+}
+
+func writeTokenError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	if errors.Is(err, tokens.ErrSecretUnconfigured) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "media signing secret not configured"})
+		return
+	}
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 }
 
 func (h *Handler) ExternalSearch() http.HandlerFunc {

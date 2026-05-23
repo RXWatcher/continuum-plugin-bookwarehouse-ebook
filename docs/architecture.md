@@ -5,7 +5,7 @@ debugging runbook isn't enough and you need to read code.
 
 ## Process layout
 
-`cmd/continuum-plugin-bookwarehouse-ebook/main.go` is the entry point.
+`cmd/silo-plugin-bookwarehouse-ebook/main.go` is the entry point.
 It builds a plugin process with four SDK capability servers:
 
 ```

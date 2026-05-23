@@ -3,7 +3,7 @@ package catalog
 import (
 	"strings"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 )
 
 func ToSummary(b bookwarehouse.Book) EbookSummary {

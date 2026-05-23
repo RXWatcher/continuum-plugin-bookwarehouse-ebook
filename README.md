@@ -1,8 +1,8 @@
-# BookWarehouse Ebooks for Continuum
+# BookWarehouse Ebooks for Silo
 
-`continuum.bookwarehouse-ebook` is the Continuum ebook backend that fronts an external BookWarehouse (Calibre-style) instance. It serves the owned-library catalog, streams cover art and book files, forwards portal-originated requests into BookWarehouse monitoring, and reconciles those requests on a cron until they reach a terminal state.
+`silo.bookwarehouse-ebook` is the Silo ebook backend that fronts an external BookWarehouse (Calibre-style) instance. It serves the owned-library catalog, streams cover art and book files, forwards portal-originated requests into BookWarehouse monitoring, and reconciles those requests on a cron until they reach a terminal state.
 
-Use this plugin when BookWarehouse owns the ebook library and `continuum.ebooks` should present it as the user portal.
+Use this plugin when BookWarehouse owns the ebook library and `silo.ebooks` should present it as the user portal.
 
 ## Category
 
@@ -13,18 +13,18 @@ Lives under **Books/Ebooks**.
 | Type | ID | Purpose |
 | --- | --- | --- |
 | `http_routes.v1` | `backend` | Chi-based handler mounted at `/api/v1/*` for catalog, browse, cover, file, external search, and request snapshot endpoints; also serves an `/admin` operator dashboard. |
-| `event_consumer.v1` | `request_handler` | Subscribes to `plugin.continuum.ebooks.request_submitted` and forwards each event to BookWarehouse monitoring, recording an upstream `external_id` in the plugin's `forwarded_request` table. |
-| `ebook_backend.v1` | `default` | Advertises this plugin to `continuum.ebooks` as a `library_source` and `download_provider` with `supports_catalog`, `supports_requests`, and `supports_auto_monitoring`. Exposes a single synthetic library (id `1`). |
+| `event_consumer.v1` | `request_handler` | Subscribes to `plugin.silo.ebooks.request_submitted` and forwards each event to BookWarehouse monitoring, recording an upstream `external_id` in the plugin's `forwarded_request` table. |
+| `ebook_backend.v1` | `default` | Advertises this plugin to `silo.ebooks` as a `library_source` and `download_provider` with `supports_catalog`, `supports_requests`, and `supports_auto_monitoring`. Exposes a single synthetic library (id `1`). |
 | `scheduled_task.v1` | `reconciler` | `*/1 * * * *` cron tick that polls BookWarehouse for non-terminal forwarded requests and republishes status changes. Each tick is bounded to 45s with a 10s per-row upstream timeout and uses an in-process mutex to drop overlapping invocations. |
 
 ## Dependencies
 
-- Paired with the **[`continuum-plugin-ebooks`](https://github.com/RXWatcher/continuum-plugin-ebooks)** portal plugin, which owns the user-facing UI, OPDS/Kobo/Kindle surfaces, and the `plugin.continuum.ebooks.request_submitted` event this backend consumes.
-- Consumes a single host event: `plugin.continuum.ebooks.request_submitted`. The handler ignores events not targeted at `continuum.bookwarehouse-ebook` so multiple ebook backends can coexist.
-- Alternates within the ecosystem: **[`continuum-plugin-local-ebooks`](https://github.com/RXWatcher/continuum-plugin-local-ebooks)** (filesystem-backed library/download provider) and **[`continuum-plugin-ebook-requests`](https://github.com/RXWatcher/continuum-plugin-ebook-requests)** (alternate request provider). Use whichever combination matches the deployment; this plugin can play both roles against a BookWarehouse instance.
+- Paired with the **[`silo-plugin-ebooks`](https://github.com/RXWatcher/silo-plugin-ebooks)** portal plugin, which owns the user-facing UI, OPDS/Kobo/Kindle surfaces, and the `plugin.silo.ebooks.request_submitted` event this backend consumes.
+- Consumes a single host event: `plugin.silo.ebooks.request_submitted`. The handler ignores events not targeted at `silo.bookwarehouse-ebook` so multiple ebook backends can coexist.
+- Alternates within the ecosystem: **[`silo-plugin-local-ebooks`](https://github.com/RXWatcher/silo-plugin-local-ebooks)** (filesystem-backed library/download provider) and **[`silo-plugin-ebook-requests`](https://github.com/RXWatcher/silo-plugin-ebook-requests)** (alternate request provider). Use whichever combination matches the deployment; this plugin can play both roles against a BookWarehouse instance.
 - Requires an external **BookWarehouse** server reachable over HTTP(S) and an API key.
 
-Host app: [`ContinuumApp/continuum`](https://github.com/ContinuumApp/continuum). SDK: [`ContinuumApp/continuum-plugin-sdk`](https://github.com/ContinuumApp/continuum-plugin-sdk).
+Host app: [`ContinuumApp/silo`](https://github.com/ContinuumApp/silo). SDK: [`ContinuumApp/continuum-plugin-sdk`](https://github.com/ContinuumApp/continuum-plugin-sdk).
 
 ## External services
 
@@ -48,7 +48,7 @@ Only `database_url` is host-managed via `global_config_schema`; the remaining ke
 Example DSN:
 
 ```text
-postgres://plugin_bookwarehouse_ebook:password@postgres:5432/continuum?search_path=bookwarehouse_ebook&sslmode=disable
+postgres://plugin_bookwarehouse_ebook:password@postgres:5432/silo?search_path=bookwarehouse_ebook&sslmode=disable
 ```
 
 Database role and schema:
@@ -56,7 +56,7 @@ Database role and schema:
 ```sql
 CREATE ROLE plugin_bookwarehouse_ebook WITH LOGIN PASSWORD '<chosen>';
 CREATE SCHEMA bookwarehouse_ebook AUTHORIZATION plugin_bookwarehouse_ebook;
-GRANT CONNECT ON DATABASE continuum TO plugin_bookwarehouse_ebook;
+GRANT CONNECT ON DATABASE silo TO plugin_bookwarehouse_ebook;
 ```
 
 ## Signed file delivery
@@ -80,4 +80,4 @@ make build
 make test
 ```
 
-CI builds linux-amd64 binaries on push to main via the reusable workflow in [RXWatcher/continuum-plugin-repository](https://github.com/RXWatcher/continuum-plugin-repository) and publishes them to the catalog at [`./binaries/`](https://github.com/RXWatcher/continuum-plugin-repository/tree/main/binaries).
+CI builds linux-amd64 binaries on push to main via the reusable workflow in [RXWatcher/silo-plugin-repository](https://github.com/RXWatcher/silo-plugin-repository) and publishes them to the catalog at [`./binaries/`](https://github.com/RXWatcher/silo-plugin-repository/tree/main/binaries).

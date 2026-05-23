@@ -1,6 +1,6 @@
 # BookWarehouse Ebook docs
 
-This directory is the operator handbook for `continuum.bookwarehouse-ebook`.
+This directory is the operator handbook for `silo.bookwarehouse-ebook`.
 The [README](../README.md) is the overview (what the plugin is, capabilities,
 config keys, signed-URL contract). The pages below go deeper on the parts an
 operator touches when something is wrong or a new instance is being brought

@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/catalog"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/catalog"
 )
 
 func mount(c *bookwarehouse.Client) http.Handler {

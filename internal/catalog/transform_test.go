@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/catalog"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/catalog"
 )
 
 func TestToSummary_HappyPath(t *testing.T) {

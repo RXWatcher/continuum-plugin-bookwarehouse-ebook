@@ -201,8 +201,8 @@ operators report "auto-monitoring isn't enabled even though I set it":
   `?token=` query string the dashboard captures into JS `hostToken` and
   echoes back on every fetch. If the dashboard 401s on every endpoint
   but `curl -H Authorization: ...` works, the operator opened
-  `/admin` without going through Continuum's auth.
-- The plugin ignores `plugin.continuum.ebooks.request_submitted` events
+  `/admin` without going through Silo's auth.
+- The plugin ignores `plugin.silo.ebooks.request_submitted` events
   that target a different `provider_plugin_id`. Multiple ebook backends
   can coexist; "no request was forwarded" usually means the portal
   routed the request to a different provider.

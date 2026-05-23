@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/store"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/store"
 )
 
 func TestUpsertForwardedRequest_NewRow(t *testing.T) {

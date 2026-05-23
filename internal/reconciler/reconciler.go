@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/store"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/store"
 )
 
 // tickTimeout caps a full Tick invocation. The scheduler fires this task on

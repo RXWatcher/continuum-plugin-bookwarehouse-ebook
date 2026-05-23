@@ -10,7 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
 )
 
 type Handler struct {

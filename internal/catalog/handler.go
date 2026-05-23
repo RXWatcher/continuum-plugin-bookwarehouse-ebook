@@ -13,8 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/tokens"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/tokens"
 )
 
 // maxCatalogLimit caps the page size forwarded upstream. limit is

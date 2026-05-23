@@ -1,0 +1,107 @@
+{
+  "plugin_id": "silo.bookwarehouse-ebook",
+  "version": "1.0.3",
+  "checksum": "d8e71551f53052df4203708ae2ee6d6c89fb68b2ab5d80d85c04143e9c28fa1d",
+  "silo_api_version": "v1",
+  "category": "Books/Ebooks",
+  "supported_platforms": [
+    {
+      "os": "linux",
+      "arch": "amd64"
+    }
+  ],
+  "capabilities": [
+    {
+      "type": "http_routes.v1",
+      "id": "backend",
+      "display_name": "Book Warehouse ebook backend",
+      "description": "Calibre-backed ebook source: catalog, file streaming, request forwarding."
+    },
+    {
+      "type": "event_consumer.v1",
+      "id": "request_handler",
+      "display_name": "Request handler",
+      "description": "Forwards ebook request_submitted events to Book Warehouse monitoring.",
+      "subscriptions": [
+        "plugin.silo.ebooks.request_submitted"
+      ]
+    },
+    {
+      "type": "ebook_backend.v1",
+      "id": "default",
+      "display_name": "Book Warehouse (Calibre)",
+      "description": "Owned-library ebook source backed by an external Book Warehouse instance.",
+      "metadata": {
+        "ebook_roles": [
+          "library_source",
+          "download_provider"
+        ],
+        "supports_catalog": true,
+        "supports_requests": true,
+        "supports_auto_monitoring": true
+      }
+    },
+    {
+      "type": "scheduled_task.v1",
+      "id": "reconciler",
+      "display_name": "Reconcile Book Warehouse request status",
+      "description": "Polls upstream Book Warehouse for status changes on non-terminal requests.",
+      "cron": "*/1 * * * *"
+    }
+  ],
+  "http_routes": [
+    {
+      "id": "file",
+      "method": "GET",
+      "path": "/api/v1/file/*",
+      "access": "public"
+    },
+    {
+      "id": "cover",
+      "method": "GET",
+      "path": "/api/v1/cover/*",
+      "access": "public"
+    },
+    {
+      "id": "api",
+      "method": "*",
+      "path": "/api/v1/*",
+      "access": "authenticated"
+    },
+    {
+      "id": "admin",
+      "method": "GET",
+      "path": "/admin",
+      "access": "admin",
+      "navigable": true,
+      "navigation_label": "BookWarehouse Ebook",
+      "navigation_kind": "admin"
+    },
+    {
+      "id": "admin_sub",
+      "method": "GET",
+      "path": "/admin/*",
+      "access": "admin"
+    }
+  ],
+  "global_config_schema": [
+    {
+      "key": "database_url",
+      "title": "Postgres connection string",
+      "description": "DSN for the dedicated bookwarehouse_ebook schema (e.g. postgres://plugin_bookwarehouse_ebook:...@host:5432/silo?search_path=bookwarehouse_ebook&sslmode=disable).",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}",
+      "required": true,
+      "admin_form": {
+        "fields": [
+          {
+            "key": "value",
+            "label": "Connection URL",
+            "control": "ADMIN_FORM_CONTROL_PASSWORD",
+            "required": true,
+            "secret": true
+          }
+        ]
+      }
+    }
+  ]
+}

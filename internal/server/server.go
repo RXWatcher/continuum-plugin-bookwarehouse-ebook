@@ -12,11 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/bookwarehouse"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/catalog"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/request"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/runtime"
-	"github.com/RXWatcher/continuum-plugin-bookwarehouse-ebook/internal/store"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/bookwarehouse"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/catalog"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/request"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/runtime"
+	"github.com/RXWatcher/silo-plugin-bookwarehouse-ebook/internal/store"
 )
 
 type Deps struct {
@@ -182,7 +182,7 @@ load();loadConfig();
 }
 
 func adminTheme(r *http.Request) string {
-	theme := r.Header.Get("X-Continuum-Theme")
+	theme := r.Header.Get("X-Silo-Theme")
 	if theme == "" {
 		theme = r.URL.Query().Get("theme")
 	}
@@ -224,7 +224,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"plugin_id":               "continuum.bookwarehouse-ebook",
+		"plugin_id":               "silo.bookwarehouse-ebook",
 		"role":                    "library_source_and_download_provider",
 		"configured":              s.deps.Config.ProviderConfigured(),
 		"base_url":                s.deps.Config.BaseURL,

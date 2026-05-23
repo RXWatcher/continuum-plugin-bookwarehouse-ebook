@@ -5,7 +5,7 @@ page is about the procedures around them.
 
 ## Install / upgrade lifecycle
 
-1. Install the binary via Continuum's plugin manager. The host runs the
+1. Install the binary via Silo's plugin manager. The host runs the
    `Runtime.GetManifest` RPC, picks up the embedded `manifest.json`, and
    registers all four capabilities (HTTP routes, event consumer, ebook
    backend, scheduled task).
@@ -19,7 +19,7 @@ page is about the procedures around them.
    and `enable_auto_monitoring` into the plugin's own `app_config` row
    (singleton, JSONB blob in the `bookwarehouse_ebook` schema).
 4. The `stream_signing_secret` is supplied by the host via the same
-   `Configure` call (it is shared with the `continuum.ebooks` portal so
+   `Configure` call (it is shared with the `silo.ebooks` portal so
    the two ends agree on signed-URL verification). It is NOT user-editable
    from `/admin`.
 5. On every restart `Configure` runs again with the host-supplied keys.
@@ -115,7 +115,7 @@ Host-managed only. The DSN should target the dedicated `bookwarehouse_ebook`
 schema:
 
 ```
-postgres://plugin_bookwarehouse_ebook:<pw>@host:5432/continuum
+postgres://plugin_bookwarehouse_ebook:<pw>@host:5432/silo
   ?search_path=bookwarehouse_ebook&sslmode=disable
 ```
 
@@ -130,7 +130,7 @@ operators never need to drop below the floor.
 ```sql
 CREATE ROLE plugin_bookwarehouse_ebook WITH LOGIN PASSWORD '<chosen>';
 CREATE SCHEMA bookwarehouse_ebook AUTHORIZATION plugin_bookwarehouse_ebook;
-GRANT CONNECT ON DATABASE continuum TO plugin_bookwarehouse_ebook;
+GRANT CONNECT ON DATABASE silo TO plugin_bookwarehouse_ebook;
 ```
 
 Migrations live in `internal/migrate/files`. The runner is called from
